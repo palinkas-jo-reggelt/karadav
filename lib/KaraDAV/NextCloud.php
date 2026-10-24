@@ -27,13 +27,13 @@ class NextCloud extends WebDAV_NextCloud
 			'name'                 => 'KaraDAV',
 			'url'                  => 'https://fossil.kd2.org/karadav/',
 			'slogan'               => 'lighter than NextCloud',
-			'color'                => '#6f918a',
+			'color'                => '#000000',
 			'color-text'           => '#ffffff',
-			'color-element'        => '#6f918a',
-			'color-element-bright' => '#6f918a',
-			'color-element-dark'   => '#6f918a',
+			'color-element'        => '#000000',
+			'color-element-bright' => '#000000',
+			'color-element-dark'   => '#000000',
 			'logo'                 => '',
-			'background'           => '#d3dddb',
+			'background'           => '#ffffff',
 			'background-text'      => '#000000',
 			'background-plain'     => false,
 			'background-default'   => false,
@@ -201,9 +201,11 @@ class NextCloud extends WebDAV_NextCloud
 	public function assembleChunks(string $login, string $name, string $target, ?int $mtime): array
 	{
 		$uri = $target;
-		$target = $this->users->current()->path . $target;
 
-		$this->storage->validatePath($target);
+		// The target may be inside a folder shared by another user
+		[$storage, $uri, $target] = $this->storage->resolveForWrite($uri);
+
+		$storage->validatePath($target);
 
 		$parent = dirname($target);
 
@@ -241,11 +243,11 @@ class NextCloud extends WebDAV_NextCloud
 			touch($target, $mtime);
 		}
 
-		$this->storage->createFileCache($uri);
+		$storage->createFileCache($uri);
 
 		return [
 			'created' => !$exists,
-			'etag'    => $this->storage->get_file_property($uri, 'DAV::getetag', 0),
+			'etag'    => $storage->get_file_property($uri, 'DAV::getetag', 0),
 		];
 	}
 
@@ -341,5 +343,366 @@ class NextCloud extends WebDAV_NextCloud
 
 		header('Content-Type: image/webp');
 		readfile($cache_path);
+	}
+
+	// ---- Public link shares (OCS Share API) -----------------------------------------------
+
+	public function nc_capabilities()
+	{
+		$c = parent::nc_capabilities();
+
+		$c['ocs']['data']['capabilities']['files_sharing'] = [
+			'api_enabled'         => true,
+			'default_permissions' => Shares::PERM_READ,
+			'group_sharing'       => false,
+			'resharing'           => false,
+			'sharebymail'         => ['enabled' => false],
+			'public'              => [
+				'enabled'            => true,
+				'password'           => ['enforced' => false, 'askForOptionalPassword' => false],
+				'expire_date'        => ['enabled' => false],
+				'multiple_links'     => true,
+				'send_mail'          => false,
+				'upload'             => false,
+				'upload_files_drop'  => false,
+			],
+			'user'                => ['send_mail' => false, 'expire_date' => ['enabled' => false]],
+		];
+
+		$c['ocs']['data']['capabilities']['public']['enabled'] = true;
+
+		return $c;
+	}
+
+	protected function ocsFailure(int $code, string $message): array
+	{
+		http_response_code($code);
+
+		return ['ocs' => [
+			'meta' => ['status' => 'failure', 'statuscode' => $code, 'message' => $message],
+			'data' => [],
+		]];
+	}
+
+	protected function shareParams(): array
+	{
+		$params = $_GET;
+		$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+
+		if ($method !== 'POST' && $method !== 'PUT') {
+			return $params;
+		}
+
+		$raw = file_get_contents('php://input');
+		$type = $_SERVER['CONTENT_TYPE'] ?? '';
+
+		if (false !== stripos($type, 'json')) {
+			$json = json_decode($raw, true);
+
+			if (is_array($json)) {
+				$params = array_merge($params, $json);
+			}
+		}
+		elseif ($method === 'POST' && !empty($_POST)) {
+			$params = array_merge($params, $_POST);
+		}
+		elseif ($raw !== '' && $raw !== false) {
+			parse_str($raw, $body);
+			$params = array_merge($params, $body);
+		}
+
+		return $params;
+	}
+
+	public function nc_user(): array
+	{
+		$out = parent::nc_user();
+
+		// Show the display name (if any) in Nextcloud clients
+		array_walk_recursive($out, function (&$v, $k) {
+			if ($k === 'display-name' && $this->user) {
+				$v = $this->user->label;
+			}
+		});
+
+		return $out;
+	}
+
+	protected function formatShare(object $share): array
+	{
+		$full = Shares::resolve($this->user->path, $share->path);
+		$is_dir = $full !== null && is_dir($full);
+		$id = $this->storage->getFileId($share->path);
+		$has_password = !empty($share->password);
+		$login = $this->user->login;
+		$label = $this->user->label;
+
+		return [
+			'id'                     => (string) $share->id,
+			'share_type'             => 3,
+			'uid_owner'              => $login,
+			'displayname_owner'      => $label,
+			'permissions'            => (int) $share->permissions,
+			'can_edit'               => false,
+			'can_delete'             => true,
+			'stime'                  => (int) $share->created,
+			'parent'                 => null,
+			'expiration'             => $share->expiry ? $share->expiry . ' 00:00:00' : null,
+			'token'                  => $share->token,
+			'uid_file_owner'         => $login,
+			'note'                   => '',
+			'label'                  => (string) $share->label,
+			'displayname_file_owner' => $label,
+			'path'                   => '/' . $share->path,
+			'item_type'              => $is_dir ? 'folder' : 'file',
+			'mimetype'               => $is_dir ? 'httpd/unix-directory' : ($full ? (mime_content_type($full) ?: 'application/octet-stream') : 'application/octet-stream'),
+			'has_preview'            => false,
+			'storage_id'             => 'home::' . $login,
+			'storage'                => 1,
+			'item_source'            => (int) $id,
+			'file_source'            => (int) $id,
+			'file_parent'            => 0,
+			'file_target'            => '/' . basename($share->path),
+			'share_with'             => $has_password ? '***' : null,
+			'share_with_displayname' => $has_password ? '(Shared link)' : '(Shared link)',
+			'password'               => $has_password ? '***' : null,
+			'send_password_by_talk'  => false,
+			'url'                    => Shares::url($share),
+			'mail_send'              => 0,
+			'hide_download'          => 0,
+			'attributes'             => null,
+		];
+	}
+
+	const USER_SHARE_OFFSET = 1000000000;
+
+	protected function formatUserShare(object $share): array
+	{
+		$recipient = $this->users->getById((int) $share->recipient);
+		$login = $this->user->login;
+		$id = $this->storage->getFileId($share->path);
+
+		return [
+			'id'                     => (string) (self::USER_SHARE_OFFSET + $share->id),
+			'share_type'             => 0,
+			'uid_owner'              => $login,
+			'displayname_owner'      => $this->user->label,
+			'permissions'            => UserShares::toNextcloudPermissions((int) $share->permissions),
+			'can_edit'               => true,
+			'can_delete'             => true,
+			'stime'                  => (int) $share->created,
+			'parent'                 => null,
+			'expiration'             => null,
+			'token'                  => null,
+			'uid_file_owner'         => $login,
+			'note'                   => '',
+			'label'                  => '',
+			'displayname_file_owner' => $this->user->label,
+			'path'                   => '/' . $share->path,
+			'item_type'              => 'folder',
+			'mimetype'               => 'httpd/unix-directory',
+			'has_preview'            => false,
+			'storage_id'             => 'home::' . $login,
+			'storage'                => 1,
+			'item_source'            => (int) $id,
+			'file_source'            => (int) $id,
+			'file_parent'            => 0,
+			'file_target'            => '/' . $share->mount,
+			'share_with'             => $recipient ? $recipient->login : null,
+			'share_with_displayname' => $recipient ? $recipient->label : null,
+			'send_password_by_talk'  => false,
+			'mail_send'              => 0,
+			'hide_download'          => 0,
+			'attributes'             => null,
+		];
+	}
+
+	protected function userShareFromId(int $id): ?object
+	{
+		$share = UserShares::get($id - self::USER_SHARE_OFFSET);
+		return $share && (int) $share->owner === $this->user->id ? $share : null;
+	}
+
+	public function nc_shares(string $uri = ''): array
+	{
+		$this->requireAuth();
+
+		$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+		$p = $this->shareParams();
+		$id = preg_match('~/shares/(\d+)/?$~', $uri, $m) ? (int) $m[1] : null;
+
+		if (preg_match('~/shares/pending/?$~', $uri)) {
+			return $this->nc_ocs([]);
+		}
+
+		try {
+			switch ($method) {
+				case 'GET':
+					if ($id !== null && $id >= self::USER_SHARE_OFFSET) {
+						$share = $this->userShareFromId($id);
+
+						return $share ? $this->nc_ocs([$this->formatUserShare($share)]) : $this->ocsFailure(404, 'Wrong share ID, share does not exist');
+					}
+
+					if ($id !== null) {
+						$share = Shares::get($id, $this->user->id);
+
+						if (!$share) {
+							return $this->ocsFailure(404, 'Wrong share ID, share does not exist');
+						}
+
+						return $this->nc_ocs([$this->formatShare($share)]);
+					}
+
+					$path = isset($p['path']) && $p['path'] !== '' ? (string) $p['path'] : null;
+					$subfiles = in_array(strtolower((string) ($p['subfiles'] ?? '')), ['1', 'true'], true);
+					$list = Shares::list($this->user->id, $path, $subfiles);
+
+					$out = array_map([$this, 'formatShare'], $list);
+
+					foreach (UserShares::forOwner($this->user->id, $subfiles ? null : $path) as $us) {
+						if ($path === null || !$subfiles || 0 === strpos($us->path . '/', Shares::normalizePath($path) . '/')) {
+							$out[] = $this->formatUserShare($us);
+						}
+					}
+
+					return $this->nc_ocs($out);
+
+				case 'POST':
+					$type = (int) ($p['shareType'] ?? 3);
+
+					if ($type === 0) {
+						$with = (string) ($p['shareWith'] ?? '');
+						$recipient = $with !== '' ? $this->users->fetch(strtolower($with)) : null;
+
+						if (!$recipient) {
+							return $this->ocsFailure(404, 'Wrong share recipient: no such user');
+						}
+
+						if (empty($p['path'])) {
+							return $this->ocsFailure(400, 'Please specify a file or folder path');
+						}
+
+						$share = UserShares::create($this->user, (string) $p['path'], $recipient,
+							UserShares::fromNextcloudPermissions((int) ($p['permissions'] ?? 1)));
+
+						return $this->nc_ocs($this->formatUserShare($share));
+					}
+
+					if ($type !== 3) {
+						return $this->ocsFailure(400, 'Only user shares (shareType=0) and public links (shareType=3) are supported');
+					}
+
+					if (in_array(strtolower((string) ($p['publicUpload'] ?? '')), ['1', 'true'], true)) {
+						return $this->ocsFailure(403, 'Public upload is not supported');
+					}
+
+					if (empty($p['path'])) {
+						return $this->ocsFailure(400, 'Please specify a file or folder path');
+					}
+
+					$share = Shares::create(
+						$this->user,
+						(string) $p['path'],
+						isset($p['password']) ? (string) $p['password'] : null,
+						isset($p['expireDate']) ? (string) $p['expireDate'] : null,
+						(string) ($p['label'] ?? $p['name'] ?? '')
+					);
+
+					return $this->nc_ocs($this->formatShare($share));
+
+				case 'PUT':
+					if ($id !== null && $id >= self::USER_SHARE_OFFSET) {
+						$share = $this->userShareFromId($id);
+
+						if (!$share) {
+							return $this->ocsFailure(404, 'Wrong share ID, share does not exist');
+						}
+
+						if (isset($p['permissions'])) {
+							$share = UserShares::update($share, UserShares::fromNextcloudPermissions((int) $p['permissions']));
+						}
+
+						return $this->nc_ocs($this->formatUserShare($share));
+					}
+
+					$share = $id !== null ? Shares::get($id, $this->user->id) : null;
+
+					if (!$share) {
+						return $this->ocsFailure(404, 'Wrong share ID, share does not exist');
+					}
+
+					$share = Shares::update(
+						$share,
+						array_key_exists('password', $p) ? (string) $p['password'] : null,
+						array_key_exists('expireDate', $p) ? (string) $p['expireDate'] : null,
+						array_key_exists('label', $p) ? (string) $p['label'] : (array_key_exists('name', $p) ? (string) $p['name'] : null)
+					);
+
+					return $this->nc_ocs($this->formatShare($share));
+
+				case 'DELETE':
+					if ($id !== null && $id >= self::USER_SHARE_OFFSET) {
+						if (!$this->userShareFromId($id)) {
+							return $this->ocsFailure(404, 'Wrong share ID, share does not exist');
+						}
+
+						UserShares::delete($id - self::USER_SHARE_OFFSET, $this->user->id);
+						return $this->nc_ocs([]);
+					}
+
+					if ($id === null || !Shares::delete($id, $this->user->id)) {
+						return $this->ocsFailure(404, 'Wrong share ID, share does not exist');
+					}
+
+					return $this->nc_ocs([]);
+			}
+		}
+		catch (\InvalidArgumentException $e) {
+			return $this->ocsFailure(404, $e->getMessage());
+		}
+
+		return $this->ocsFailure(405, 'Method not allowed');
+	}
+
+	public function nc_sharees(): array
+	{
+		$this->requireAuth();
+
+		$search = strtolower(trim((string) ($_GET['search'] ?? '')));
+		$exact = [];
+		$users = [];
+
+		foreach ($this->users->list() as $u) {
+			if ($u->id === $this->user->id) {
+				continue;
+			}
+
+			if ($search !== '' && false === strpos(strtolower($u->login), $search) && false === strpos(strtolower($u->label), $search)) {
+				continue;
+			}
+
+			$item = [
+				'label'  => $u->label,
+				'value'  => ['shareType' => 0, 'shareWith' => $u->login],
+				'shareWithDisplayNameUnique' => $u->login,
+			];
+
+			if ($search !== '' && strtolower($u->login) === $search) {
+				$exact[] = $item;
+			}
+			else {
+				$users[] = $item;
+			}
+		}
+
+		return $this->nc_ocs([
+			'exact'   => ['users' => $exact, 'groups' => [], 'remotes' => [], 'emails' => [], 'circles' => [], 'rooms' => []],
+			'users'   => $users,
+			'groups'  => [],
+			'remotes' => [],
+			'emails'  => [],
+			'lookup'  => [],
+		]);
 	}
 }

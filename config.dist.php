@@ -100,6 +100,16 @@ namespace KaraDAV;
 //const LOGO_URL = 'https://my.website.example.org/mylogo.svg';
 
 /**
+ * SHARE_SITE_NAME: name displayed in the 30px banner at the top of public share pages.
+ * SHARE_LOGO_URL: optional logo displayed on the left of that banner, scaled to fit.
+ * Either a full URL or a file name relative to the site root (e.g. put mylogo.png in the www folder).
+ * If both are empty, no banner is displayed.
+ * @var string
+ */
+//const SHARE_SITE_NAME = 'My Files';
+//const SHARE_LOGO_URL = 'mylogo.png';
+
+/**
  * WOPI client discovery URL
  * eg. http://onlyoffice.domain.tld/hosting/discovery for OnlyOffice
  * If set to NULL, WOPI support is disabled

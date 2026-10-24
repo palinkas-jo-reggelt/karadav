@@ -13,7 +13,10 @@
 
 	{if !$ldap}
 			<dt><label for="f_login">{{Login}}</label></dt>
-			<dd><input type="text" pattern="[a-z0-9_]+" name="login" id="f_login" value="{$user.login}" required /></dd>
+			<dd><input type="text" pattern="[a-z0-9_]+" title="Lowercase letters, digits and underscores only (no spaces or capitals)" name="login" id="f_login" value="{$user.login}" required /></dd>
+			<dt><label for="f_display_name">{{Display name}}</label></dt>
+			<dd><input type="text" name="display_name" id="f_display_name" value="{$user.display_name}" maxlength="100" /></dd>
+			<dd class="help">{{Optional. Shown in the interface instead of the login (spaces and capitals allowed).}}</dd>
 			<dt><label for="f_password">{{Password}}</label></dt>
 			<dd><input type="password" name="password" id="f_password" /></dd>
 			<dd>{{(Leave empty if you don't want to change the password.)}}</dd>

@@ -18,7 +18,7 @@ class Server
 		$this->dav = new WebDAV;
 		$this->nc = new NextCloud($this->users);
 
-		$this->storage = new Storage($this->nc);
+		$this->storage = new MountStorage($this->nc);
 		$this->dav->setStorage($this->storage);
 	}
 
@@ -29,6 +29,11 @@ class Server
 		// Always say YES to OPTIONS
 		if ($method == 'OPTIONS') {
 			$this->dav->http_options();
+			return true;
+		}
+
+		// Public share links: no login required
+		if (PublicShare::route($relative_uri)) {
 			return true;
 		}
 

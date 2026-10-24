@@ -15,6 +15,20 @@ if (PHP_INT_SIZE === 4 && !function_exists('curl_init')) {
 
 const ROOT = __DIR__;
 
+require_once __DIR__ . '/lib/compat.php';
+
+/**
+ * On Windows, realpath() returns backslashes, but all the path checks in KaraDAV compare
+ * against forward-slash paths. Because this function lives in the KaraDAV namespace, every
+ * unqualified realpath() call in KaraDAV code uses it instead of the built-in one.
+ * (PHP on Windows accepts forward slashes everywhere.) On Linux this is a no-op.
+ */
+function realpath(string $path): string|false
+{
+	$real = \realpath($path);
+	return $real === false ? false : str_replace('\\', '/', $real);
+}
+
 spl_autoload_register(function ($class) {
     $class = str_replace('\\', '/', $class);
     require_once ROOT . '/lib/' . $class . '.php';
@@ -62,6 +76,8 @@ $defaults = [
 	'LDAP_FIND_USER'         => null,
 	'LDAP_FIND_IS_ADMIN'     => null,
 	'BLOCK_IOS_APPS'         => true,
+	'SHARE_SITE_NAME'        => '',
+	'SHARE_LOGO_URL'         => '',
 ];
 
 foreach ($defaults as $const => $value) {

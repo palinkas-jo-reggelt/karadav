@@ -61,6 +61,14 @@ class Storage extends AbstractStorage implements TrashInterface
 		$this->root = realpath($user->path) . '/';
 	}
 
+	/**
+	 * Where a file must be physically written: [Storage, uri in that storage, real path]
+	 */
+	public function resolveForWrite(string $uri): array
+	{
+		return [$this, $uri, $this->root . $uri];
+	}
+
 	public function getUserURL(): string
 	{
 		return $this->user->dav_url;
@@ -268,8 +276,11 @@ class Storage extends AbstractStorage implements TrashInterface
 			$sql = sprintf('SELECT %s FROM files WHERE user = ?;', $col);
 		}
 		else {
-			$sql = sprintf('SELECT %s FROM files WHERE user = ? AND path LIKE ? ESCAPE \'\\\';', $col);
-			$params[] = $db->getPathLikeExpression($uri);
+			// Range query on the (user, path) index: much faster than LIKE, which scans the whole table
+			// ('0' is the character right after '/')
+			$sql = sprintf('SELECT %s FROM files WHERE user = ? AND path >= ? AND path < ?;', $col);
+			$params[] = $uri . '/';
+			$params[] = $uri . '0';
 		}
 
 		return $db->firstColumn($sql, $this->user->id, ...$params);
@@ -345,6 +356,19 @@ class Storage extends AbstractStorage implements TrashInterface
 				return 'false';
 			case NextCloud::PROP_OC_SHARETYPES:
 				return WebDAV::EMPTY_PROP_VALUE;
+			case NextCloud::PROP_OCS_SHARE_PERMISSIONS:
+			case NextCloud::PROP_NC_SHARE_PERMISSIONS:
+				// 1 = read, 16 = share
+				if (trim($uri, '/') === '' || Shares::isHidden($uri) || !is_readable($target)) {
+					return '0';
+				}
+				return '17';
+			case NextCloud::PROP_NC_SHARE_ATTRIBUTES:
+				return '[]';
+			case NextCloud::PROP_OC_OWNER_ID:
+				return $this->user->login;
+			case NextCloud::PROP_OC_OWNER_DISPLAY:
+				return $this->user->login;
 			case NextCloud::PROP_OC_DOWNLOADURL:
 				return is_dir($target) ? null : $this->nextcloud->getDirectDownloadURL($uri, $this->user->login);
 			case NextCloud::PROP_NC_RICH_WORKSPACE:
@@ -380,6 +404,11 @@ class Storage extends AbstractStorage implements TrashInterface
 
 				if (is_readable($target)) {
 					$permissions[] = NextCloud::PERM_READ;
+
+					// Allow the clients to offer the "Share" menu (not for the root, nor the trash)
+					if (trim($uri, '/') !== '' && !Shares::isHidden($uri)) {
+						$permissions[] = NextCloud::PERM_SHARE;
+					}
 				}
 
 				return implode('', $permissions);
@@ -577,6 +606,12 @@ class Storage extends AbstractStorage implements TrashInterface
 			throw new WebDAV_Exception('Target does not exist', 404);
 		}
 
+		// Public links to a deleted file or directory are removed
+		if (0 !== strpos($uri, '.trash')) {
+			Shares::removePath($this->user->id, $uri);
+			UserShares::removePath($this->user->id, $uri);
+		}
+
 		// Move to trash
 		if (DEFAULT_TRASHBIN_DELAY > 0 && 0 !== strpos($uri, '.trash')) {
 			$this->moveToTrash($uri);
@@ -671,6 +706,8 @@ class Storage extends AbstractStorage implements TrashInterface
 
 			if ($method === 'rename') {
 				$this->getResourceProperties($uri)->move($destination);
+				Shares::movePath($this->user->id, $uri, $destination);
+				UserShares::movePath($this->user->id, $uri, $destination);
 			}
 			else {
 				touch($target, filemtime($source));

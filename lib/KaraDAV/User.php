@@ -16,11 +16,14 @@ class User
 	protected int $quota;
 	protected bool $is_admin;
 	protected ?string $session_id = null;
+	protected ?string $display_name = null;
 
 	// Generated properties
 	protected string $path;
 	protected string $dav_url;
 	protected string $avatar_url;
+	/** Name shown in the interface: display name if set, login otherwise */
+	protected string $label;
 
 	const DB_PROPERTIES = [
 		'id',
@@ -29,6 +32,7 @@ class User
 		'quota',
 		'is_admin',
 		'session_id',
+		'display_name',
 	];
 
 	public function __get(string $key): mixed
@@ -84,6 +88,7 @@ class User
 
 		$this->path = rtrim(realpath($this->path), '/') . '/';
 		$this->dav_url = WWW_URL . 'files/' . $this->login . '/';
+		$this->label = trim((string) $this->display_name) !== '' ? trim($this->display_name) : $this->login;
 		$this->avatar_url = WWW_URL . 'avatars/' . substr(md5($this->login), 0, 16);
 	}
 
@@ -112,6 +117,28 @@ class User
 		return $user;
 	}
 
+	/**
+	 * Space used by this user. Reads the SUM from the files index (fast), as walking the whole
+	 * directory tree on every request is very slow on big data sets. Falls back to a real scan
+	 * if the index is empty (run bin/reindex.php after copying files in by hand).
+	 */
+	protected function usedBytes(): int|string
+	{
+		static $cache = [];
+
+		if (isset($cache[$this->id])) {
+			return $cache[$this->id];
+		}
+
+		$row = DB::getInstance()->first('SELECT COUNT(*) AS n, SUM(size) AS s FROM files WHERE user = ?;', $this->id);
+
+		if ($row && $row->n > 1) {
+			return $cache[$this->id] = (string) ($row->s ?? 0);
+		}
+
+		return $cache[$this->id] = Storage::getDirectorySize($this->path);
+	}
+
 	public function quota(bool $with_trash = false): stdClass
 	{
 		$trash = null;
@@ -124,10 +151,10 @@ class User
 		elseif ($this->quota === -1) {
 			$total = @disk_total_space($this->path);
 			$free = @disk_free_space($this->path);
-			$used = Storage::getDirectorySize($this->path);
+			$used = $this->usedBytes();
 		}
 		else {
-			$used = Storage::getDirectorySize($this->path);
+			$used = $this->usedBytes();
 			$total = null;
 			$free = null;
 		}
@@ -204,6 +231,11 @@ class User
 			}
 		}
 
+		if (property_exists($data, 'display_name')) {
+			$name = trim(preg_replace('/\s+/u', ' ', strip_tags((string) $data->display_name)));
+			$data->display_name = $name === '' ? null : mb_substr($name, 0, 100);
+		}
+
 		if (isset($data->password) && $data->password === '') {
 			unset($data->password);
 		}
@@ -238,8 +270,8 @@ class User
 		$db = DB::getInstance();
 		$db->begin();
 
-		$db->run('INSERT OR IGNORE INTO users (login, password, quota, is_admin) VALUES (?, ?, ?, ?);',
-			$this->login, $this->password, $this->quota, $this->is_admin ? 1 : 0);
+		$db->run('INSERT OR IGNORE INTO users (login, password, quota, is_admin, display_name) VALUES (?, ?, ?, ?, ?);',
+			$this->login, $this->password, $this->quota, $this->is_admin ? 1 : 0, $this->display_name);
 
 		$this->id = $db->lastInsertRowId();
 

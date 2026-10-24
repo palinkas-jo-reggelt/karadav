@@ -1,3 +1,9 @@
+## Unreleased (fork)
+
+* Add public link shares: OCS share API, `/s/<token>` public pages, password and expiration, ZIP download
+* Add Windows/FastCGI compatibility helpers (backslash paths, `apache_request_headers`)
+* Add `bin/reindex.php`
+
 ## 0.7.0 beta 7 - ??
 
 * Update WebDAV file manager: now implements copy/cut/paste/zip, code editor, better markdown rendering, gallery view…

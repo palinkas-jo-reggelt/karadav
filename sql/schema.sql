@@ -4,7 +4,8 @@ CREATE TABLE users (
 	password TEXT NOT NULL,
 	quota INTEGER NULL,
 	is_admin INTEGER NOT NULL DEFAULT 0,
-	session_id TEXT NULL
+	session_id TEXT NULL,
+	display_name TEXT NULL
 );
 
 CREATE UNIQUE INDEX users_login ON users(login);
@@ -54,3 +55,31 @@ CREATE TABLE files (
 );
 
 CREATE UNIQUE INDEX files_path ON files (user, path);
+-- Public share links (Nextcloud-style "share by link")
+CREATE TABLE IF NOT EXISTS shares (
+	id INTEGER PRIMARY KEY NOT NULL,
+	user INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	path TEXT NOT NULL,          -- relative to the user's root, no leading slash
+	token TEXT NOT NULL,
+	password TEXT NULL,          -- password_hash() or NULL
+	expiry TEXT NULL,            -- YYYY-MM-DD (valid through the end of that day, UTC) or NULL
+	permissions INTEGER NOT NULL DEFAULT 1,
+	label TEXT NULL,
+	created INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS shares_token ON shares (token);
+CREATE INDEX IF NOT EXISTS shares_user_path ON shares (user, path);
+-- Folder shares between users (the shared folder appears in the recipient's root)
+CREATE TABLE IF NOT EXISTS user_shares (
+	id INTEGER PRIMARY KEY NOT NULL,
+	owner INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	path TEXT NOT NULL,          -- folder, relative to the owner's root, no leading slash
+	recipient INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	mount TEXT NOT NULL,         -- name of the folder in the recipient's root
+	permissions INTEGER NOT NULL DEFAULT 1,  -- 1 = read, 2 = write (read + create/edit/delete)
+	created INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS user_shares_mount ON user_shares (recipient, mount);
+CREATE UNIQUE INDEX IF NOT EXISTS user_shares_target ON user_shares (owner, path, recipient);

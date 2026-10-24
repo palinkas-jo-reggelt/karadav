@@ -68,6 +68,14 @@ abstract class NextCloud
 	const PROP_NC_IS_ENCRYPTED = self::NC_NAMESPACE . ':is-encrypted';
 	const PROP_NC_DDC = self::NC_NAMESPACE . ':dDC';
 
+	// Needed by recent desktop clients to enable the "Sharing options" dialog
+	const OCS_NAMESPACE = 'http://open-collaboration-services.org/ns';
+	const PROP_OCS_SHARE_PERMISSIONS = self::OCS_NAMESPACE . ':share-permissions';
+	const PROP_NC_SHARE_ATTRIBUTES = self::NC_NAMESPACE . ':share-attributes';
+	const PROP_NC_SHARE_PERMISSIONS = self::NC_NAMESPACE . ':share-permissions';
+	const PROP_OC_OWNER_ID = self::OC_NAMESPACE . ':owner-id';
+	const PROP_OC_OWNER_DISPLAY = self::OC_NAMESPACE . ':owner-display-name';
+
 	const NC_PROPERTIES = [
 		self::PROP_OC_ID,
 		self::PROP_OC_FILEID,
@@ -80,6 +88,11 @@ abstract class NextCloud
 		self::PROP_NC_NOTE,
 		self::PROP_NC_IS_ENCRYPTED,
 		self::PROP_NC_DDC,
+		self::PROP_OCS_SHARE_PERMISSIONS,
+		self::PROP_NC_SHARE_PERMISSIONS,
+		self::PROP_NC_SHARE_ATTRIBUTES,
+		self::PROP_OC_OWNER_ID,
+		self::PROP_OC_OWNER_DISPLAY,
 	];
 
 	protected string $prefix = '';
@@ -315,6 +328,9 @@ abstract class NextCloud
 		// direct_editing route is required for iOS apps
 		'ocs/v2.php/apps/files/api/v1/directEditing' => 'direct_editing',
 		'ocs/v2.php/apps/files_sharing/api/v1/shares' => 'shares',
+		'ocs/v1.php/apps/files_sharing/api/v1/shares' => 'shares',
+		'ocs/v2.php/apps/files_sharing/api/v1/sharees' => 'sharees',
+		'ocs/v1.php/apps/files_sharing/api/v1/sharees' => 'sharees',
 		'ocs/v2.php/apps/user_status' => 'empty',
 		'ocs/v2.php/core/navigation/apps' => 'empty',
 		// the following 3 routes are required for iOS apps apparently
@@ -415,8 +431,8 @@ abstract class NextCloud
 			return true;
 		}
 
-		// This route is XML only
-		if ($route == 'shares') {
+		// The shares API replies in XML by default, and in JSON if the client asks for it (format=json)
+		if ($route == 'shares' && !$this->wantsJson()) {
 			http_response_code(200);
 			header('Content-Type: text/xml; charset=utf-8', true);
 			echo '<?xml version="1.0"?>' . $this->xml($v);
@@ -443,6 +459,12 @@ abstract class NextCloud
 		$this->server->log('NC Sent response: %d', http_response_code());
 
 		return true;
+	}
+
+	protected function wantsJson(): bool
+	{
+		return ($_GET['format'] ?? '') === 'json'
+			|| false !== stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json');
 	}
 
 	protected function xml(array $array): string

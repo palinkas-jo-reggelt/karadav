@@ -24,7 +24,7 @@
 
 		<tr>
 			<td><img src="{$user.avatar_url}" alt="" /></td>
-			<th>{$user.login}</th>
+			<th>{$user.label}{if $user.label !== $user.login} <small>({$user.login})</small>{/if}</th>
 			<td>
 				{{%used used out of %total} used=$quota.used|format_mbytes total=$quota.total|format_mbytes}<br />
 				<progress max="{$quota.total}" value="{$quota.used}"></progress>
