@@ -54,6 +54,44 @@ class Storage extends AbstractStorage implements TrashInterface
 		return $quota;
 	}
 
+	const MIME_BY_EXTENSION = [
+		'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'jpe' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif',
+		'webp' => 'image/webp', 'bmp' => 'image/bmp', 'tif' => 'image/tiff', 'tiff' => 'image/tiff', 'svg' => 'image/svg+xml',
+		'ico' => 'image/x-icon', 'heic' => 'image/heic', 'heif' => 'image/heif', 'avif' => 'image/avif', 'cr2' => 'image/x-canon-cr2',
+		'nef' => 'image/x-nikon-nef', 'arw' => 'image/x-sony-arw', 'dng' => 'image/x-adobe-dng', 'psd' => 'image/vnd.adobe.photoshop',
+		'mp4' => 'video/mp4', 'm4v' => 'video/x-m4v', 'mov' => 'video/quicktime', 'avi' => 'video/x-msvideo', 'mkv' => 'video/x-matroska',
+		'webm' => 'video/webm', 'wmv' => 'video/x-ms-wmv', 'mpg' => 'video/mpeg', 'mpeg' => 'video/mpeg', '3gp' => 'video/3gpp',
+		'mts' => 'video/mp2t', 'm2ts' => 'video/mp2t', 'flv' => 'video/x-flv',
+		'mp3' => 'audio/mpeg', 'm4a' => 'audio/mp4', 'wav' => 'audio/x-wav', 'flac' => 'audio/flac', 'ogg' => 'audio/ogg',
+		'oga' => 'audio/ogg', 'aac' => 'audio/aac', 'wma' => 'audio/x-ms-wma', 'opus' => 'audio/opus',
+		'pdf' => 'application/pdf', 'txt' => 'text/plain', 'log' => 'text/plain', 'md' => 'text/markdown', 'csv' => 'text/csv',
+		'html' => 'text/html', 'htm' => 'text/html', 'css' => 'text/css', 'js' => 'application/javascript', 'json' => 'application/json',
+		'xml' => 'application/xml', 'rtf' => 'application/rtf', 'epub' => 'application/epub+zip',
+		'doc' => 'application/msword', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+		'xls' => 'application/vnd.ms-excel', 'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		'xlsm' => 'application/vnd.ms-excel.sheet.macroEnabled.12',
+		'ppt' => 'application/vnd.ms-powerpoint', 'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+		'odt' => 'application/vnd.oasis.opendocument.text', 'ods' => 'application/vnd.oasis.opendocument.spreadsheet',
+		'odp' => 'application/vnd.oasis.opendocument.presentation',
+		'zip' => 'application/zip', '7z' => 'application/x-7z-compressed', 'rar' => 'application/vnd.rar', 'gz' => 'application/gzip',
+		'tar' => 'application/x-tar', 'exe' => 'application/vnd.microsoft.portable-executable', 'apk' => 'application/vnd.android.package-archive',
+	];
+
+	/**
+	 * Mime type from the file extension. mime_content_type() opens and reads every file, which is
+	 * extremely slow on folders with thousands of photos/videos, so it is only used for unknown extensions.
+	 */
+	static public function mimeType(string $path): string
+	{
+		$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+		if ($ext !== '' && isset(self::MIME_BY_EXTENSION[$ext])) {
+			return self::MIME_BY_EXTENSION[$ext];
+		}
+
+		return @mime_content_type($path) ?: 'application/octet-stream';
+	}
+
 	public function setUser(User $user): void
 	{
 		$this->user = $user;
@@ -296,7 +334,7 @@ class Storage extends AbstractStorage implements TrashInterface
 			case 'DAV::getcontenttype':
 				// ownCloud app crashes if mimetype is provided for a directory
 				// https://github.com/owncloud/android/issues/3768
-				return is_dir($target) ? null : @mime_content_type($target);
+				return is_dir($target) ? null : self::mimeType($target);
 			case 'DAV::resourcetype':
 				return is_dir($target) ? 'collection' : '';
 			case 'DAV::getlastmodified':
@@ -754,10 +792,14 @@ class Storage extends AbstractStorage implements TrashInterface
 
 	static public function indexFiles(User $user, ?string $path): void
 	{
+		$path_arg = $path;
 		$db = DB::getInstance();
 
 		static $st = null;
-		$st ??= $db->prepare('REPLACE INTO files (user, path, size, modified) VALUES (?, ?, ?, ?);');
+		// UPSERT keeps the file id stable (REPLACE would give every file a new id on each reindex)
+		$st ??= $db->prepare('INSERT INTO files (user, path, size, modified) VALUES (?, ?, ?, ?)
+			ON CONFLICT (user, path) DO UPDATE SET size = excluded.size, modified = excluded.modified;');
+		$seen = [];
 
 		$root = $user->path;
 		$filter = null;
@@ -799,6 +841,8 @@ class Storage extends AbstractStorage implements TrashInterface
 			// Path does not have the leading slash
 			$path = ltrim($path, '/');
 
+			$seen[$path] = true;
+
 			$st->bindValue(1, $user->id);
 			$st->bindValue(2, $path);
 			$st->bindValue(3, $f->isDir() ? 0 : self::getFileSize($f->getRealPath()));
@@ -806,6 +850,21 @@ class Storage extends AbstractStorage implements TrashInterface
 			$st->execute();
 			$st->clear();
 			$st->reset();
+		}
+
+		// Full re-index: forget files that no longer exist on disk
+		if (null === $path_arg) {
+			$stale = [];
+
+			foreach ($db->iterate('SELECT id, path FROM files WHERE user = ?;', $user->id) as $row) {
+				if ($row->path !== '' && !isset($seen[$row->path])) {
+					$stale[] = (int) $row->id;
+				}
+			}
+
+			foreach (array_chunk($stale, 500) as $chunk) {
+				$db->run('DELETE FROM files WHERE id IN (' . implode(',', $chunk) . ');');
+			}
 		}
 	}
 
@@ -1313,7 +1372,7 @@ class Storage extends AbstractStorage implements TrashInterface
 				NextCloud::PROP_OC_SIZE => $size,
 				NextCloud::PROP_OC_ID => $this->getFileId($name),
 				'DAV::getcontentlength' => $size,
-				'DAV::getcontenttype' => $is_dir ? null : @mime_content_type($target),
+				'DAV::getcontenttype' => $is_dir ? null : self::mimeType($target),
 				'DAV::resourcetype' => $is_dir ? 'collection' : '',
 			];
 		}

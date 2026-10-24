@@ -23,7 +23,8 @@ class PublicShare
 	const PREVIEW_VIDEO = ['mp4' => 'video/mp4', 'm4v' => 'video/mp4', 'webm' => 'video/webm', 'ogv' => 'video/ogg', 'mov' => 'video/mp4'];
 	const PREVIEW_AUDIO = ['mp3' => 'audio/mpeg', 'wav' => 'audio/wav', 'ogg' => 'audio/ogg', 'oga' => 'audio/ogg',
 		'm4a' => 'audio/mp4', 'aac' => 'audio/aac', 'flac' => 'audio/flac', 'opus' => 'audio/ogg'];
-	const PREVIEW_TEXT = ['txt', 'md', 'csv', 'tsv', 'log', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'sql', 'html', 'htm', 'css', 'js', 'php', 'py', 'sh', 'ps1', 'bat', 'ics', 'vcf'];
+	const PREVIEW_TEXT = ['txt', 'md', 'log', 'json', 'xml', 'yml', 'yaml', 'ini', 'conf', 'sql', 'html', 'htm', 'css', 'js', 'php', 'py', 'sh', 'ps1', 'bat', 'ics', 'vcf'];
+	const PREVIEW_EML = ['eml'];
 	const PREVIEW_DOCX = ['docx'];
 	const PREVIEW_SHEET = ['xlsx', 'xlsm', 'xls', 'ods'];
 	const LIGHTBOX_JS = <<<'JS'
@@ -72,6 +73,8 @@ JS;
 			isset(self::PREVIEW_AUDIO[$ext]) => 'audio',
 			$ext === 'pdf' => 'pdf',
 			in_array($ext, self::PREVIEW_TEXT, true) => 'text',
+			in_array($ext, self::PREVIEW_EML, true) => 'eml',
+			FilePreview::kind($name) !== null => 'fp',
 			in_array($ext, self::PREVIEW_DOCX, true) => 'docx',
 			in_array($ext, self::PREVIEW_SHEET, true) => 'sheet',
 			default => null,
@@ -329,8 +332,42 @@ JS;
 				$txt = (string) fread($fp, self::PREVIEW_TEXT_MAX);
 				fclose($fp);
 				$txt = mb_convert_encoding($txt, 'UTF-8', 'UTF-8');
+				$pretty = false;
+
+				if (strtolower(pathinfo($name, PATHINFO_EXTENSION)) === 'json' && $size <= self::PREVIEW_TEXT_MAX
+					&& null !== ($p = EmlPreview::prettyJSON($txt))) {
+					$txt = $p;
+					$pretty = true;
+				}
+
 				$note = $size > self::PREVIEW_TEXT_MAX ? '<p class="meta">Showing the first ' . self::size(self::PREVIEW_TEXT_MAX) . ' only.</p>' : '';
 				$content = $note . '<pre class="pv txt">' . self::e($txt) . '</pre>';
+				break;
+			case 'fp':
+				$fp = FilePreview::render($file, $name);
+				$content = '<div class="pv">' . $fp['html'] . '</div>';
+				break;
+			case 'eml':
+				if ($size > EmlPreview::MAX_SIZE) {
+					$content = '<p class="meta">This message is too large to preview. Please download it.</p>';
+					break;
+				}
+
+				$eml = EmlPreview::parse((string) file_get_contents($file));
+				$rows = '';
+
+				foreach ($eml['headers'] as [$k, $v]) {
+					$rows .= '<tr><th>' . self::e($k) . '</th><td>' . self::e($v) . '</td></tr>';
+				}
+
+				$att = '';
+
+				if (count($eml['attachments'])) {
+					$att = '<p class="meta">Attachments: ' . implode(', ', array_map(
+						fn($a) => self::e($a['name']) . ' (' . self::size($a['size']) . ')', $eml['attachments'])) . '</p>';
+				}
+
+				$content = '<table class="emlh">' . $rows . '</table><pre class="pv txt">' . self::e($eml['text']) . '</pre>' . $att;
 				break;
 			case 'docx':
 			case 'sheet':
@@ -358,8 +395,51 @@ JS;
 
 		$note = in_array($kind, ['docx', 'sheet'], true) ? '<span class="pill">Text Preview of Document</span>' : '';
 
+		if ($kind === 'eml') {
+			$note = '<span class="pill">Email Preview</span>';
+		}
+		elseif ($kind === 'fp' && !empty($fp['pill'])) {
+			$note = '<span class="pill">' . self::e($fp['pill']) . '</span>';
+		}
+		elseif (!empty($pretty)) {
+			$note = '<span class="pill">Formatted JSON</span>';
+		}
+
 		$body = sprintf('%s<h1>%s</h1><p class="meta metarow"><span>%s &middot; shared by %s</span>%s</p><p><a class="btn" href="%s">Download</a></p>%s',
 			$nav, self::e($name), self::size($size), self::e($this->owner->label), $note, $dl, $content);
+
+		if ($kind === 'video') {
+			$prev = $next = null;
+
+			if ($back !== null) {
+				$vids = [];
+
+				foreach (scandir(dirname($file)) ?: [] as $item) {
+					if ($item[0] !== '.' && is_file(dirname($file) . '/' . $item) && self::previewKind($item) === 'video') {
+						$vids[] = $item;
+					}
+				}
+
+				$n = count($vids);
+				$i = array_search($name, $vids, true);
+
+				if ($n > 1 && $i !== false) {
+					$prev = $this->link('', ltrim($back . '/' . $vids[($i + $n - 1) % $n], '/'));
+					$next = $this->link('', ltrim($back . '/' . $vids[($i + 1) % $n], '/'));
+				}
+			}
+
+			$nonce = base64_encode(random_bytes(16));
+			$csp[] = "script-src 'nonce-" . $nonce . "'";
+			$bar = sprintf('<div class="vbar"><span class="vl">%s</span><span class="vn">%s</span><span class="vr"><a class="vb" href="%s">Download</a></span></div>',
+				$back !== null ? sprintf('<a class="vb" href="%s">&#10006; Close</a>', self::e($this->link('', $back))) : '',
+				self::e($name), $dl);
+			$navs = $prev ? sprintf('<a class="vnav vp" rel="prev" href="%s" aria-label="Previous video">&#8249;</a><a class="vnav vx" rel="next" href="%s" aria-label="Next video">&#8250;</a>', self::e($prev), self::e($next)) : '';
+			$scripts = '<script nonce="' . $nonce . '">(function(){'
+				. 'document.addEventListener("keydown",function(e){var l=document.querySelector("a[rel=prev]"),r=document.querySelector("a[rel=next]");'
+				. 'if(e.key==="ArrowLeft"&&l&&e.target.tagName!=="VIDEO"){location.href=l.href}else if(e.key==="ArrowRight"&&r&&e.target.tagName!=="VIDEO"){location.href=r.href}});})();</script>';
+			$body = $bar . '<p class="meta">' . self::size($size) . ' &middot; shared by ' . self::e($this->owner->label) . '</p>' . $content . $navs;
+		}
 
 		$this->layout($name, $body, $csp, $scripts, $kind === 'pdf');
 	}
@@ -624,17 +704,23 @@ JS;
 			. '.s,.d{color:var(--muted);white-space:nowrap;font-size:.9rem}.a{text-align:right;white-space:nowrap}.n{word-break:break-word}'
 			. '.empty{color:var(--muted);text-align:center}.error{color:var(--danger)}'
 			. 'input{padding:.45rem;background:var(--bg);color:var(--fg);border:1px solid var(--muted);border-radius:6px}button{padding:.45rem 1rem;background:var(--fg);color:var(--bg);border:0;border-radius:6px;cursor:pointer}'
+			. '.emlh{width:auto;margin:.6rem 0 0}.emlh th{text-align:left;color:var(--muted);font-weight:500;padding:.15rem .9rem .15rem 0;vertical-align:top;white-space:nowrap}.emlh td{border:0;padding:.15rem 0;word-break:break-word}'
 			. '.metarow{display:flex;justify-content:space-between;align-items:center;gap:.5rem;flex-wrap:wrap}'
 			. '.pill{background:var(--fg);color:var(--bg);font-size:.8rem;padding:.2rem .7rem;border-radius:999px;white-space:nowrap}'
 			. 'main.wide{max-width:none;margin:0;padding:.5rem 1rem 1rem}'
 			. '.pv{display:block;max-width:100%;margin-top:1rem}img.pv{max-height:80vh;margin-left:auto;margin-right:auto}video.pv{width:100%}'
 			. 'iframe.pdf{width:100%;height:85vh;border:1px solid var(--line);background:#fff}pre.txt{white-space:pre-wrap;word-break:break-word;background:var(--soft);padding:1rem;border-radius:4px;font-size:.85rem;max-height:80vh;overflow:auto}'
+			. '.pv table{width:auto}.pv td,.pv th{border:1px solid var(--line);padding:.25rem .5rem;text-align:left}.pv th{background:var(--soft)}.pv td.a,.pv th.a{text-align:right}.pv .doc{max-height:none}'
 			. '.doc{overflow:auto;line-height:1.5}.doc table{width:auto}.doc td,.doc th{border:1px solid var(--line);padding:.25rem .5rem}.doc img{max-width:100%}.sheet{overflow:auto;max-height:70vh}.doc h2{font-size:1rem;margin:1.2rem 0 .3rem}'
 			. '.lb{display:none;position:fixed;inset:0;background:#000d;z-index:9;align-items:center;justify-content:center;flex-direction:column}'
 			. '.lb-c{flex:1;display:flex;align-items:center;justify-content:center;width:100%;min-height:0;padding:3rem 4rem 0}.lb-c img{max-width:100%;max-height:100%;object-fit:contain;box-shadow:0 0 20px #000}'
 			. '.lb button{position:absolute;background:#fff2;color:#fff;border:0;cursor:pointer;border-radius:50%;width:3rem;height:3rem;font-size:2rem;line-height:1;padding:0}.lb button:hover{background:#fff4}'
 			. '.lb-x{top:.7rem;right:.7rem}.lb-p{left:.7rem;top:50%}.lb-n{right:.7rem;top:50%}.lb.single .lb-p,.lb.single .lb-n{display:none}'
 			. '.lb-b{color:#eee;padding:.7rem;text-align:center;font-size:.9rem}.lb-b a{color:#cde;margin-left:.6rem;cursor:pointer}'
+			. '.vbar{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:6px;padding:.3rem .5rem;margin:.3rem 0}'
+			. '.vn{text-align:center;font-weight:600;word-break:break-word;min-width:0}.vr{text-align:right;white-space:nowrap}.vb{display:inline-block;background:var(--fg);color:var(--bg);padding:.35rem .8rem;border-radius:6px;text-decoration:none;font:inherit;font-size:.9rem;border:0;cursor:pointer}'
+			. '.vnav{position:fixed;top:50%;z-index:5;width:2.6rem;height:2.6rem;border-radius:50%;background:#0009;color:#fff;font-size:1.8rem;line-height:2.5rem;text-align:center;text-decoration:none;transform:translateY(-50%)}.vp{left:.5rem}.vx{right:.5rem}'
+			. '@media(max-width:600px){.vbar{grid-template-columns:auto 1fr;}.vr{grid-column:1/3}.vn{text-align:right}}'
 			. '@media(max-width:600px){main{margin:0;border:0;border-radius:0;padding:1rem}.d{display:none}}'
 			. '</style></head><body>' . $banner . '<main' . ($wide ? ' class="wide"' : '') . '>' . $body . '</main>' . $scripts . '</body></html>';
 	}

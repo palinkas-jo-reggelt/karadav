@@ -455,7 +455,7 @@ class NextCloud extends WebDAV_NextCloud
 			'displayname_file_owner' => $label,
 			'path'                   => '/' . $share->path,
 			'item_type'              => $is_dir ? 'folder' : 'file',
-			'mimetype'               => $is_dir ? 'httpd/unix-directory' : ($full ? (mime_content_type($full) ?: 'application/octet-stream') : 'application/octet-stream'),
+			'mimetype'               => $is_dir ? 'httpd/unix-directory' : ($full ? Storage::mimeType($full) : 'application/octet-stream'),
 			'has_preview'            => false,
 			'storage_id'             => 'home::' . $login,
 			'storage'                => 1,

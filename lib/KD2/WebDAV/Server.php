@@ -485,6 +485,8 @@ class Server
 
 	public function http_get(string $uri): ?string
 	{
+		$this->extendExecutionTime();
+
 		$props = [];
 		$this->http_head($uri, $props);
 
@@ -703,6 +705,8 @@ class Server
 
 	public function http_propfind(string $uri): ?string
 	{
+		$this->extendExecutionTime();
+
 		// We only support depth of 0 and 1
 		$depth = isset($_SERVER['HTTP_DEPTH']) && empty($_SERVER['HTTP_DEPTH']) ? 0 : 1;
 
