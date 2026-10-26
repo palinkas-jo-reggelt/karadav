@@ -92,8 +92,8 @@ class Users
 
 		$this->current = $_SESSION['user'] ?? null;
 
-		// A session does not survive a change of the password of its account
-		if ($this->current && !hash_equals(self::sessionMarker($this->current), (string) ($_SESSION['auth'] ?? ''))) {
+		// A session does not survive a change of the password of its account, nor the deletion of the account
+		if ($this->current && (!$this->current->id || !hash_equals(self::sessionMarker($this->current), (string) ($_SESSION['auth'] ?? '')))) {
 			unset($_SESSION['user'], $_SESSION['auth']);
 			$this->current = null;
 		}

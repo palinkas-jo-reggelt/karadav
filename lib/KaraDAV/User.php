@@ -106,7 +106,23 @@ class User
 	public function __unserialize(array $data): void
 	{
 		// Reload data from DB
-		$this->load(DB::getInstance()->first('SELECT * FROM users WHERE id = ?;', $data['id']));
+		$row = DB::getInstance()->first('SELECT * FROM users WHERE id = ?;', $data['id']);
+
+		if ($row) {
+			$this->load($row);
+			return;
+		}
+
+		// The account was deleted: an empty user, that Users::current() does not accept (id 0, no password)
+		$this->id = 0;
+		$this->login = '';
+		$this->password = '';
+		$this->quota = 0;
+		$this->is_admin = false;
+		$this->path = '';
+		$this->dav_url = '';
+		$this->avatar_url = '';
+		$this->label = '';
 	}
 
 	protected function init(): void
