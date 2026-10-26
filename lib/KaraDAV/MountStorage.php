@@ -433,6 +433,12 @@ class MountStorage extends Storage
 			throw new WebDAV_Exception('File not found', 404);
 		}
 
+		// Everything lands in the storage of the destination (the owner's, in a shared folder):
+		// make sure it fits before copying anything. The check done for each file only compares
+		// it to the space free at the start, not to what the previous files took.
+		$dst = $this->resolve($destination);
+		($dst ? $dst[0] : $this)->assertQuota(self::getTreeSize($source));
+
 		$existed = $this->exists($destination);
 
 		if ($existed) {
