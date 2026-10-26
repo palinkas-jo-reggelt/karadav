@@ -56,6 +56,19 @@ class Storage extends AbstractStorage implements TrashInterface
 		return $quota;
 	}
 
+	/**
+	 * Make sure $bytes more bytes fit in the quota of this storage's user
+	 * @throws WebDAV_Exception 507 if not
+	 */
+	public function assertQuota(int|string $bytes): void
+	{
+		$quota = $this->getQuota();
+
+		if ($quota->free <= 0 || self::compareQuotaSafe($quota->free, $bytes)) {
+			throw new WebDAV_Exception('Your quota does not allow for the upload of this file', 507);
+		}
+	}
+
 	const MIME_BY_EXTENSION = [
 		'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'jpe' => 'image/jpeg', 'png' => 'image/png', 'gif' => 'image/gif',
 		'webp' => 'image/webp', 'bmp' => 'image/bmp', 'tif' => 'image/tiff', 'tiff' => 'image/tiff', 'svg' => 'image/svg+xml',

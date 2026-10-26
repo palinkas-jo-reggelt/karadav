@@ -159,9 +159,18 @@ class NextCloud extends WebDAV_NextCloud
 		@mkdir($path, 0777, true);
 
 		$file_path = $path . '/' . $part;
+
+		// All the unfinished uploads of this user share the same quota, otherwise
+		// starting many uploads in parallel would allow to go far beyond it
+		$size = Storage::getDirectorySize($this->temporary_chunks_path . '/' . $login);
+
+		// Sending a part again replaces it: do not count the old one twice (native integers only, safe on 32-bits systems)
+		if (is_file($file_path) && PHP_INT_SIZE === 8) {
+			$size = max(0, $size - (int) @filesize($file_path));
+		}
+
 		$out = fopen($file_path, 'wb');
 		$quota = $this->user->quota();
-		$size = Storage::getDirectorySize($path);
 
 		while (!feof($pointer)) {
 			$data = fread($pointer, 8192);
@@ -220,11 +229,33 @@ class NextCloud extends WebDAV_NextCloud
 			throw new WebDAV_Exception('Target exists and is a directory', 409);
 		}
 
-		$out = fopen($target, 'wb');
 		$list = glob($path . '/*') ?: [];
 
 		// Make sure chunks are ordered "naturally": 1, 2, 3, 10, 11, and no 1, 10, 11, 2, 3…
 		natcasesort($list);
+
+		// Quota was checked while the chunks were sent, but other files may have been
+		// added since then: check again that the assembled file fits where it is written
+		$needed = 0;
+
+		foreach ($list as $file) {
+			$needed = Storage::addNumbersSafe($needed, Storage::getFileSize($file));
+		}
+
+		// Replacing a file frees its size (only done with native integers, safe on 32-bits systems)
+		if ($exists && PHP_INT_SIZE === 8) {
+			$needed = max(0, $needed - (int) @filesize($target));
+		}
+
+		try {
+			$storage->assertQuota($needed);
+		}
+		catch (WebDAV_Exception $e) {
+			$this->deleteChunks($login, $name);
+			throw $e;
+		}
+
+		$out = fopen($target, 'wb');
 
 		foreach ($list as $file) {
 			$in = fopen($file, 'rb');
