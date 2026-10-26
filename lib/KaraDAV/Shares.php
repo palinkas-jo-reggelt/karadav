@@ -106,6 +106,11 @@ class Shares
 			throw new \InvalidArgumentException('File or folder not found');
 		}
 
+		// A link made from a folder shared by someone else: the recipient needs edit rights on that folder
+		if ($creator !== null && $creator !== $user->id && !UserShares::recipientCanWrite($user->id, $creator, $path)) {
+			throw new \InvalidArgumentException('You need edit rights on this shared folder to create a public link');
+		}
+
 		$expiry = self::normalizeExpiry($expiry);
 		$password = (string) $password;
 		$hash = $password !== '' ? password_hash($password, PASSWORD_DEFAULT) : null;
@@ -170,7 +175,32 @@ class Shares
 			$db->run('UPDATE shares SET label = ? WHERE id = ?;', trim($label) ?: null, $share->id);
 		}
 
-		return self::get($share->id, $share->user);
+		return self::get($share->id, $share->creator ?? $share->user);
+	}
+
+	/**
+	 * All the links a user can see and revoke: links to their own files (including those made
+	 * by people they share a folder with) and links they made from folders shared with them.
+	 * @return object[] with owner_login, owner_label, creator_login, creator_label
+	 */
+	static public function listVisible(int $user_id): array
+	{
+		return iterator_to_array(DB::getInstance()->iterate('SELECT s.*,
+				o.login AS owner_login, COALESCE(NULLIF(TRIM(o.display_name), \'\'), o.login) AS owner_label,
+				c.login AS creator_login, COALESCE(NULLIF(TRIM(c.display_name), \'\'), c.login) AS creator_label
+			FROM shares s
+			INNER JOIN users o ON o.id = s.user
+			LEFT JOIN users c ON c.id = s.creator
+			WHERE s.user = ? OR s.creator = ?
+			ORDER BY s.created DESC, s.id DESC;', $user_id, $user_id), false);
+	}
+
+	/** Revoke a link: allowed for the owner of the file and for the user who made the link */
+	static public function revoke(int $id, int $user_id): bool
+	{
+		$db = DB::getInstance();
+		$db->run('DELETE FROM shares WHERE id = ? AND (user = ? OR creator = ?);', $id, $user_id, $user_id);
+		return $db->changes() > 0;
 	}
 
 	static public function delete(int $id, int $user_id): bool

@@ -188,10 +188,11 @@ class MountStorage extends Storage
 			$perms = 'G';
 
 			if ($is_root) {
-				$perms = 'SR' . $perms . 'D' . ($write ? 'CK' : ''); // S: shared, R: can be shared by link, D: leave the share (unshare)
+				// S: shared, R: can be shared by link (only with edit rights), D: leave the share (unshare)
+				$perms = 'S' . ($write ? 'R' : '') . $perms . 'D' . ($write ? 'CK' : '');
 			}
 			else {
-				$perms = 'R' . $perms; // R: can be shared by link
+				$perms = ($write ? 'R' : '') . $perms; // R: can be shared by link (only with edit rights)
 
 				if ($write) {
 					$perms .= 'WDNV' . ($is_dir ? 'CK' : '');

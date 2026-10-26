@@ -82,9 +82,44 @@ class UserShares
 
 	static public function update(object $share, int $permissions): object
 	{
-		DB::getInstance()->run('UPDATE user_shares SET permissions = ? WHERE id = ?;',
-			$permissions & self::PERM_WRITE ? self::PERM_READ | self::PERM_WRITE : self::PERM_READ, $share->id);
+		$db = DB::getInstance();
+		$write = (bool) ($permissions & self::PERM_WRITE);
+
+		$db->run('UPDATE user_shares SET permissions = ? WHERE id = ?;',
+			$write ? self::PERM_READ | self::PERM_WRITE : self::PERM_READ, $share->id);
+
+		// Only users who can edit a folder may publish it: links made by a recipient who lost that right are removed
+		if (!$write) {
+			self::removeRecipientLinks($share);
+		}
+
 		return self::get($share->id);
+	}
+
+	/** Public links the recipient made from the shared folder */
+	static protected function removeRecipientLinks(object $share): void
+	{
+		$db = DB::getInstance();
+		$db->run('DELETE FROM shares WHERE user = ? AND creator = ? AND (path = ? OR path LIKE ? ESCAPE \'\\\');',
+			$share->owner, $share->recipient, $share->path, $db->getPathLikeExpression($share->path));
+	}
+
+	/** Can $recipient edit $path (a path of $owner) through a folder shared with them? */
+	static public function recipientCanWrite(int $owner_id, int $recipient_id, string $path): bool
+	{
+		$path = Shares::normalizePath($path);
+
+		foreach (self::forRecipient($recipient_id) as $share) {
+			if ((int) $share->owner !== $owner_id || !($share->permissions & self::PERM_WRITE)) {
+				continue;
+			}
+
+			if ($path === $share->path || 0 === strpos($path, $share->path . '/')) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/** Remove a share (by the owner, or by the recipient who leaves it) */
@@ -100,8 +135,7 @@ class UserShares
 		$db->run('DELETE FROM user_shares WHERE id = ?;', $id);
 
 		// Public links the recipient made from this folder stop working with the share
-		$db->run('DELETE FROM shares WHERE user = ? AND creator = ? AND (path = ? OR path LIKE ? ESCAPE \'\\\');',
-			$share->owner, $share->recipient, $share->path, $db->getPathLikeExpression($share->path));
+		self::removeRecipientLinks($share);
 
 		return true;
 	}

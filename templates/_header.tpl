@@ -21,6 +21,7 @@
 			<li class="index{if $current === 'index'} current{/if}"><a href="{$www_url}"><img src="{$logged_user.avatar_url}" alt="" /> <span>{{My account}}</span></a></li>
 			<li class="files{if $current === 'files'} current{/if}"><a href="{$www_url}app.php?app=files"><svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M15 3v4a1 1 0 0 0 1 1h4"/><path d="M18 17h-7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4l5 5v7a2 2 0 0 1-2 2"/><path d="M16 17v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h2"/></g></svg> <span>{{My files}}</span></a></li>
 			<li class="sharing{if $current === 'sharing'} current{/if}"><a href="{$www_url}sharing.php"><span>{{Sharing}}</span></a></li>
+			<li class="links{if $current === 'links'} current{/if}"><a href="{$www_url}links.php"><span>{{Public links}}</span></a></li>
 			<li class="trash{if $current === 'trash'} current{/if}"><a href="{$www_url}trash.php"><span>{{Trash}}</span></a></li>
 			{if !empty($apps)}
 				{foreach from=$apps item="app" key="id"}
