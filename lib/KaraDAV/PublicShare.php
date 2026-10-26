@@ -129,6 +129,12 @@ JS;
 
 		$sub = $this->is_dir ? Shares::normalizePath((string) ($_GET['p'] ?? '')) : '';
 
+		// Hidden files and folders (.env, .git, .trash…) are not listed nor zipped, they must not be reachable by name either
+		if ($sub !== '' && preg_match('~(^|/)\.~', $sub)) {
+			$this->error(404, 'File not found.');
+			return;
+		}
+
 		switch ($action) {
 			case 'download':
 				$this->download($sub);
