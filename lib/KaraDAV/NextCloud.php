@@ -130,6 +130,42 @@ class NextCloud extends WebDAV_NextCloud
 		];
 	}
 
+	/**
+	 * Direct download API: the client sends the id of a file and receives a temporary link to it, that works without
+	 * a login (the link is signed, see getDirectDownloadURL).
+	 *
+	 * Replaces the version of the library, which failed on every request and took the name of the user from the
+	 * request: the link must always be signed for the person who is logged in, for a file they can see.
+	 */
+	protected function nc_direct_url(): array
+	{
+		if (($_SERVER['REQUEST_METHOD'] ?? null) != 'POST') {
+			throw new WebDAV_Exception('Invalid request method', 405);
+		}
+
+		$this->requireAuth();
+
+		$id = $_POST['fileId'] ?? null;
+
+		if (!is_string($id) || !ctype_digit($id) || strlen($id) > 15 || (int) $id < 1) {
+			throw new WebDAV_Exception('Invalid fileId', 400);
+		}
+
+		// Only the files of this user, and of the folders shared with them
+		$uri = $this->storage->getFilePathFromId((int) $id);
+
+		if ($uri === null || $uri === '' || !$this->storage->exists($uri)
+			|| $this->storage->get_file_property($uri, 'DAV::resourcetype', 0) === 'collection') {
+			throw new WebDAV_Exception('File not found', 404);
+		}
+
+		$url = $this->getDirectDownloadURL($uri, $this->user->login);
+
+		$this->server->log('NextCloud Direct Download URL created for file %d', (int) $id);
+
+		return $this->nc_ocs(compact('url'));
+	}
+
 	public function getLoginURL(?string $token): string
 	{
 		if ($token) {
