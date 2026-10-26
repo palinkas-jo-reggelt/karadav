@@ -1,26 +1,22 @@
 {{Login} assign="title"}
 {include file="_header.tpl"}
 
-{if $error === -1}
-	<p class="info">{{You are logged in, you can close this window or tab and go back to the app.}}</p>
-{else}
-	{if $error === 2}
-		<p class="error">{{Too many failed attempts. Please wait a few minutes before trying again.}}</p>
-	{elseif $error}
-		<p class="error">{{Invalid login or password}}</p>
-	{elseif $_GET.logout}
-		<p class="info">{{You have logged out}}</p>
-	{/if}
+{if $error === 2}
+	<p class="error">{{Too many failed attempts. Please wait a few minutes before trying again.}}</p>
+{elseif $error}
+	<p class="error">{{Invalid login or password}}</p>
+{elseif $_GET.logout}
+	<p class="info">{{You have logged out}}</p>
+{/if}
 
-	<form method="post" action="">
+<form method="post" action="">
 
-	{if $app_login !== null}
-		<input type="hidden" name="nc" value="{$app_login}" />
-		<p class="info">
-			<strong>{{An external application is trying to access your data.}}</strong><br />
-			{{Please login to continue and allow access.}}
-		</p>
-	{/if}
+{if $connect}
+	<p class="info">
+		<strong>{{An application is asking to access your files.}}</strong><br />
+		{{Log in to continue. You will be asked to confirm before it is given access.}}
+	</p>
+{/if}
 
 	<fieldset>
 		<legend>{{Sign in}}</legend>
@@ -37,7 +33,6 @@
 		</p>
 	</fieldset>
 	{form_csrf}
-	</form>
-{/if}
+</form>
 
 {include file="_footer.tpl"}

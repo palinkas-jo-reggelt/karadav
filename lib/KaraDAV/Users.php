@@ -242,39 +242,30 @@ class Users
 		]);
 	}
 
-	public function appSessionCreate(?string $token = null): ?stdClass
+	/**
+	 * App password for a user: "token:password", the token finds the session and the password is checked
+	 */
+	public function appSessionCreateFor(User $user): stdClass
 	{
-		$current = $this->current();
+		$password = $this->generatePassword();
 
-		if (!$current) {
-			return null;
-		}
-
-		if (null !== $token) {
-			if (!ctype_alnum($token) || strlen($token) > 100) {
-				return null;
-			}
-
-			$expiry = '+10 minutes';
-			$hash = null;
-			$password = null;
-		}
-		else {
-			$expiry = '+1 month';
-			$password = $this->generatePassword();
-
-			// The app password contains the user password hash
-			// this way we can invalidate all sessions if we change
-			// the user password
-			$hash = password_hash($password . $current->password, \PASSWORD_DEFAULT);
-			$token = $this->generatePassword();
-		}
+		// The app password contains the user password hash
+		// this way we can invalidate all sessions if we change
+		// the user password
+		$hash = password_hash($password . $user->password, \PASSWORD_DEFAULT);
+		$token = $this->generatePassword();
 
 		DB::getInstance()->run(
-			'INSERT OR IGNORE INTO app_sessions (user, password, expiry, token) VALUES (?, ?, datetime(\'now\', ?), ?);',
-			$current->id, $hash, $expiry, $token);
+			'INSERT INTO app_sessions (user, password, expiry, token) VALUES (?, ?, datetime(\'now\', \'+1 month\'), ?);',
+			$user->id, $hash, $token);
 
 		return (object) compact('password', 'token');
+	}
+
+	public function appSessionCreate(): ?stdClass
+	{
+		$current = $this->current();
+		return $current ? $this->appSessionCreateFor($current) : null;
 	}
 
 	public function appSessionCreateAndGetRedirectURL(): string
@@ -283,44 +274,6 @@ class Users
 		$current = $this->current();
 
 		return sprintf(NextCloud::AUTH_REDIRECT_URL, WWW_URL, $current->login, $session->token . ':' . $session->password);
-	}
-
-	public function appSessionValidateToken(string $token): ?stdClass
-	{
-		$db = DB::getInstance();
-
-		// Only a pending login token (no password yet) that has not expired: the token of an
-		// established app session is only half of its credentials and must not be exchangeable
-		$session = $db->first('SELECT * FROM app_sessions WHERE token = ? AND password IS NULL AND expiry > datetime();', $token);
-
-		if (!$session) {
-			return null;
-		}
-
-		// the token can only be exchanged against a session once,
-		// so we set a password and remove the token
-		$session->password = $this->generatePassword();
-
-		// The app password contains the user password hash
-		// this way we can invalidate all sessions if we change
-		// the user password
-		$user = $this->getById($session->user);
-		$hash = password_hash($session->password . $user->password, \PASSWORD_DEFAULT);
-		$session->token = self::generatePassword();
-		$session->password = $session->token . ':' . $session->password;
-
-		// Atomic: if two requests race with the same token, only one gets the password
-		$db->run('UPDATE app_sessions
-			SET token = ?, password = ?, expiry = datetime(\'now\', \'+1 month\')
-			WHERE token = ? AND password IS NULL;',
-			$session->token, $hash, $token);
-
-		if ($db->changes() !== 1) {
-			return null;
-		}
-
-		$session->user = $user;
-		return $session;
 	}
 
 	public function appSessionLogin(?string $login, ?string $app_password): ?User

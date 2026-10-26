@@ -21,6 +21,13 @@ Because why reuse standard URL query parameters when you can invent weird stuff,
 
 The second API is different but is explained in the documentation, it involves extra steps. When the process finishes, the user is left to close the opened browser window, so you got to have a specific waiting page for that. The desktop app will try to request (poll) the username and password every time it receives focus again, or every 30 seconds.
 
+### How KaraDAV does it
+
+Neither flow gives anything before the user has logged in **and confirmed** on a page that shows which application is asking, from which address (compared with the address of the browser), and for which account.
+
+* v1: `login.php?nc=redirect`, then the confirmation, then the redirect to the `nc://` address.
+* v2: `POST /index.php/login/v2` creates a flow in the `login_flows` table (see `LoginFlow`) and returns two different tokens. The poll token is secret and only the application knows it. The token in the login URL (`login.php?flow=...`) only lets the user approve that flow: it cannot be used to collect the password, and a token chosen by someone else is not accepted. Approving is a POST with a CSRF token. The first poll after the approval gets an app password and deletes the flow. A flow lasts 10 minutes, and one address can have 30 unfinished flows.
+
 ## JSON/XML API endpoints required
 
 Those endpoints are requested by the clients and one or the other client will fail if they don't return something that looks valid.

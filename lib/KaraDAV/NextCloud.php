@@ -103,19 +103,37 @@ class NextCloud extends WebDAV_NextCloud
 
 	public function validateToken(string $token): ?array
 	{
-		$session = $this->users->appSessionValidateToken($token);
+		return LoginFlow::redeem($token, $this->users);
+	}
 
-		if (!$session) {
-			return null;
+	/**
+	 * Login flow v2: the flow, and the token the application will poll with, are created here,
+	 * the browser only gets a different, single-use token
+	 */
+	public function nc_login_v2(): array
+	{
+		if (($_SERVER['REQUEST_METHOD'] ?? null) != 'POST') {
+			throw new WebDAV_Exception('Invalid request method', 405);
 		}
 
-		return ['login' => $session->user->login, 'password' => $session->password];
+		try {
+			$flow = LoginFlow::create($_SERVER['HTTP_USER_AGENT'] ?? '', Throttle::ip());
+		}
+		catch (\OverflowException $e) {
+			Throttle::sendHeaders(60);
+			throw new WebDAV_Exception('Too many login requests, please try again later', 429);
+		}
+
+		return [
+			'poll'  => ['token' => $flow->poll_token, 'endpoint' => sprintf('%s%s', $this->root_url, array_search('poll', self::ROUTES))],
+			'login' => $this->getLoginURL($flow->login_token),
+		];
 	}
 
 	public function getLoginURL(?string $token): string
 	{
 		if ($token) {
-			return sprintf('%slogin.php?nc=%s', WWW_URL, $token);
+			return sprintf('%slogin.php?flow=%s', WWW_URL, $token);
 		}
 		else {
 			return sprintf('%slogin.php?nc=redirect', WWW_URL);
