@@ -1214,7 +1214,7 @@ class Storage extends AbstractStorage implements TrashInterface
 
 		$token_decode = WOPI::base64_decode_url_safe($token);
 
-		list($user_hmac, $random, $ttl, $login) = explode('_', $token_decode);
+		list($user_hmac, $random, $ttl, $login) = explode('_', $token_decode, 4) + [null, null, null, null];
 		$ttl = (int) $ttl;
 
 		if ($ttl < time()) {

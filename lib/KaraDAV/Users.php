@@ -44,7 +44,7 @@ class Users
 		if (!$user && LDAP::enabled()) {
 			$ldap = LDAP::getInstance();
 
-			if (!$ldap->checkUser($login)) {
+			if (!User::isValidLogin($login) || !$ldap->checkUser($login)) {
 				return null;
 			}
 
@@ -173,6 +173,10 @@ class Users
 			return null;
 		}
 		elseif (!$user && $ok) {
+			if (!User::isValidLogin($login)) {
+				return null;
+			}
+
 			$user = new User;
 			$user->create(['login' => $login, 'password' => random_bytes(10)]);
 			$user = $this->get($login);

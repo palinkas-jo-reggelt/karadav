@@ -35,6 +35,45 @@ class User
 		'display_name',
 	];
 
+	/**
+	 * Logins are used as folder names, in URLs and in tokens, so the allowed set is small:
+	 * 1 to 64 letters (lower case), digits, dot, dash, underscore and @, starting and ending with a letter or a digit.
+	 * Names Windows treats specially (CON, NUL, COM1…) and the names of the files KaraDAV keeps in its data folder are refused.
+	 */
+	static public function isValidLogin(string $login): bool
+	{
+		if (!preg_match('/^[a-z0-9](?:[a-z0-9._@-]{0,62}[a-z0-9])?$/D', $login)) {
+			return false;
+		}
+
+		if (preg_match('/^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\..*)?$/D', $login)) {
+			return false;
+		}
+
+		foreach ([DB_FILE, ERRORS_LOG, LOG_FILE] as $file) {
+			$name = $file ? strtolower(basename($file)) : null;
+
+			if ($name !== null && ($login === $name || 0 === strpos($login, $name . '-'))) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * A login that can never point outside of the user folder: used to be extra careful with accounts that
+	 * were created before logins were validated
+	 */
+	static public function isSafePathName(string $login): bool
+	{
+		return $login !== ''
+			&& !str_contains($login, '/')
+			&& !str_contains($login, '\\')
+			&& !str_contains($login, "\0")
+			&& !preg_match('/^\.+$/D', $login);
+	}
+
 	public function __get(string $key): mixed
 	{
 		return $this->$key;
@@ -183,6 +222,9 @@ class User
 
 	public function delete()
 	{
+		// Never delete a folder that is not the user's own, whatever the login in the database says
+		$this->assert(self::isSafePathName($this->login), _('Refusing to delete this account: its login is not a valid folder name'));
+
 		Storage::deleteDirectory($this->path);
 		DB::getInstance()->run('DELETE FROM users WHERE id = ?;', $this->id);
 	}
@@ -228,6 +270,10 @@ class User
 				}
 
 				$this->assert(!$exists, _('This login already exists: %s'), $data->login);
+
+				// Only for a new or changed login: older accounts keep working as they are
+				$this->assert(self::isValidLogin($data->login),
+					_('Invalid login: use 1 to 64 letters, digits, dots, dashes, underscores or @, starting and ending with a letter or a digit'));
 			}
 		}
 
