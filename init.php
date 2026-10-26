@@ -134,8 +134,19 @@ if (!defined('KaraDAV\SECRET_KEY')) {
 		$cfg = preg_replace('/\?>\s*$|$/', $c, $cfg, 1);
 
 		file_put_contents($cfg_file, $cfg);
+
+		// The next request must not run a cached copy of the file, without the key
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($cfg_file, true);
+		}
+
 		define('KaraDAV\SECRET_KEY', $secret);
 		unset($secret, $cfg_file, $cfg);
+	}
+	// The file has the key but the constant is not defined: the file was written by the request before this
+	// one and we are still running an older version of it, read the key from the file
+	elseif (preg_match('/const\s+SECRET_KEY\s*=\s*([\'"])(.*?)\1\s*;/s', $cfg, $m)) {
+		define('KaraDAV\SECRET_KEY', stripslashes($m[2]));
 	}
 }
 
