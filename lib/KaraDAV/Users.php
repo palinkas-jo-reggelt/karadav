@@ -229,7 +229,11 @@ class Users
 
 	public function appSessionValidateToken(string $token): ?stdClass
 	{
-		$session = DB::getInstance()->first('SELECT * FROM app_sessions WHERE token = ?;', $token);
+		$db = DB::getInstance();
+
+		// Only a pending login token (no password yet) that has not expired: the token of an
+		// established app session is only half of its credentials and must not be exchangeable
+		$session = $db->first('SELECT * FROM app_sessions WHERE token = ? AND password IS NULL AND expiry > datetime();', $token);
 
 		if (!$session) {
 			return null;
@@ -247,10 +251,15 @@ class Users
 		$session->token = self::generatePassword();
 		$session->password = $session->token . ':' . $session->password;
 
-		DB::getInstance()->run('UPDATE app_sessions
+		// Atomic: if two requests race with the same token, only one gets the password
+		$db->run('UPDATE app_sessions
 			SET token = ?, password = ?, expiry = datetime(\'now\', \'+1 month\')
-			WHERE token = ?;',
+			WHERE token = ? AND password IS NULL;',
 			$session->token, $hash, $token);
+
+		if ($db->changes() !== 1) {
+			return null;
+		}
 
 		$session->user = $user;
 		return $session;
