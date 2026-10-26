@@ -73,7 +73,7 @@
 			</tbody>
 		</table>
 	</form>
-	{if $has_own}<p><a href="{$www_url}?empty_trash" class="btn sm" onclick="return confirm('Empty the whole trash permanently?');">{{Empty trash now}}</a></p>{/if}
+	{if $has_own}<form method="post" action="" class="inline">{form_csrf}<input type="submit" name="empty_trash" value="{{Empty trash now}}" class="btn sm" onclick="return confirm('Empty the whole trash permanently?');" /></form>{/if}
 {/if}
 
 {/if}

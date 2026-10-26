@@ -258,6 +258,10 @@ form_exec_if('purge', function () {
 	exit;
 });
 
+form_exec_if('empty_trash', function () use ($logged_user) {
+	$logged_user->emptyTrash();
+}, 'trash.php');
+
 $notice = null;
 
 if (isset($_GET['restored'])) {

@@ -12,7 +12,7 @@
 	<dd>
 		Trash: {$quota.trash|format_mbytes}.
 		{if $quota.trash}
-			<br /><a href="{$www_url}trash.php" class="btn sm">{{View and restore}}</a> <a href="?empty_trash" class="btn sm">{{Empty trash now}}</a>
+			<br /><a href="{$www_url}trash.php" class="btn sm">{{View and restore}}</a> <form method="post" action="" class="inline">{form_csrf}<input type="submit" name="empty_trash" value="{{Empty trash now}}" class="btn sm" onclick="return confirm('Empty the whole trash permanently?');" /></form>
 		{/if}
 	</dd>
 	<dt>WebDAV URL</dt>

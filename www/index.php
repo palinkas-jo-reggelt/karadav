@@ -15,11 +15,9 @@ if (isset($_GET['logout'])) {
 	exit;
 }
 
-if (isset($_GET['empty_trash'])) {
+form_exec_if('empty_trash', function () use ($logged_user) {
 	$logged_user->emptyTrash();
-	header('Location: ./');
-	exit;
-}
+}, 'index.php');
 
 $quota = $logged_user->quota(true);
 $percent = $quota->total ? floor(($quota->used / $quota->total)*100) . '%' : '100%';
