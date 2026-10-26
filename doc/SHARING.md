@@ -37,5 +37,5 @@ Copy your files into `data/<login>/` first, then run the command above.
 
 ## Recommended settings (config.local.php)
 
-    const ERRORS_SHOW = false;     // do not print PHP warnings into API responses
+    const ERRORS_SHOW = false;     // default: error details go to error.log in the KaraDAV root folder, not to visitors
     const WWW_URL = 'https://files.example.com/';   // set it explicitly behind a proxy / on a subfolder

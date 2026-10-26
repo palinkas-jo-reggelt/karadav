@@ -7,7 +7,8 @@ use KD2\Translate;
 
 require __DIR__ . '/lib/KD2/ErrorManager.php';
 
-ErrorManager::enable(ErrorManager::DEVELOPMENT);
+// Hide error details from visitors until the configuration says otherwise (see ERRORS_SHOW below)
+ErrorManager::enable(ErrorManager::PRODUCTION);
 
 if (PHP_INT_SIZE === 4 && !function_exists('curl_init')) {
 	throw new \LogicException('Extension "curl" is required for 32-bits systems.');
@@ -62,9 +63,9 @@ $defaults = [
 	'EXTERNAL_API_KEY'       => null,
 	'LOG_FILE'               => null,
 	'ENABLE_XSENDFILE'       => false,
-	'ERRORS_SHOW'            => true,
+	'ERRORS_SHOW'            => false,
 	'ERRORS_EMAIL'           => null,
-	'ERRORS_LOG'             => DATA_ROOT . '/error.log',
+	'ERRORS_LOG'             => ROOT . '/error.log',
 	'ERRORS_REPORT_URL'      => null,
 	'AUTH_CALLBACK'          => null,
 	'LDAP_HOST'              => null,
@@ -88,20 +89,16 @@ foreach ($defaults as $const => $value) {
 
 class UserException extends \RuntimeException {}
 
-if (!ERRORS_SHOW) {
-	ErrorManager::setEnvironment(ErrorManager::PRODUCTION);
+if (ERRORS_SHOW) {
+	ErrorManager::setEnvironment(ErrorManager::DEVELOPMENT);
 }
 
 if (ERRORS_EMAIL) {
 	ErrorManager::setEmail(ERRORS_EMAIL);
 }
 
-if (ERRORS_LOG) {
-	ErrorManager::setLogFile(ERRORS_LOG);
-}
-elseif (is_writeable(DATA_ROOT . '/error.log')) {
-	ErrorManager::setLogFile(DATA_ROOT . '/error.log');
-}
+// Errors are always logged, by default in error.log in the KaraDAV root folder
+ErrorManager::setLogFile(ERRORS_LOG ?: ROOT . '/error.log');
 
 if (ERRORS_REPORT_URL) {
 	ErrorManager::setRemoteReporting(ERRORS_REPORT_URL, true);

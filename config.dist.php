@@ -263,12 +263,13 @@ namespace KaraDAV;
  * If set to TRUE, full error messages and source code will be displayed to visitors.
  * If set to FALSE, just a generic "an error happened" message will be displayed.
  *
- * It is recommended to set this to FALSE in production.
- * Default: TRUE
+ * Only set this to TRUE while debugging: error pages reveal file paths, source code and
+ * internal details to anyone who triggers an error.
+ * Default: FALSE
  *
  * @var bool
  */
-//const ERRORS_SHOW = true;
+//const ERRORS_SHOW = false;
 
 /**
  * Send PHP errors to this email address
@@ -280,12 +281,13 @@ namespace KaraDAV;
 //const ERRORS_EMAIL = null;
 
 /**
- * Log PHP errors in this file.
- * Default: ROOT/data/error.log
+ * Log PHP errors in this file. The web server user must be able to write to it
+ * (or to the KaraDAV root folder, if the file does not exist yet).
+ * Default: ROOT/error.log (in the KaraDAV root folder, not the www folder)
  *
  * @var string
  */
-//const ERRORS_LOG = __DIR__ . '/data/error.log';
+//const ERRORS_LOG = __DIR__ . '/error.log';
 
 /**
  * Send errors reports to this errbit/airbrake compatible API endpoint
