@@ -328,7 +328,7 @@ else {
 
 			$items[] = (object) [
 				'value' => $id . '|' . $item,
-				'name' => $item, 'is_dir' => $dir, 'size' => $size, 'count' => $count,
+				'name' => basename($path), 'is_dir' => $dir, 'size' => $size, 'count' => $count,
 				'path' => $shown, 'deleted' => $deleted,
 				'by' => $by_user ? $by_user->label : $by,
 				'shared' => $c->scope !== null,

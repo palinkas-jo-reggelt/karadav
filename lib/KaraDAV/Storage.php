@@ -1264,7 +1264,9 @@ class Storage extends AbstractStorage implements TrashInterface
 	{
 		$this->ensureTrashExists();
 
-		$name = basename($uri);
+		// Name in the trash: two items with the same name (from different folders, or deleted by different
+		// people) must never replace each other, or the first one would be lost for good
+		$name = $this->claimTrashName(basename($uri));
 
 		$target = $this->root . '.trash/info/' . $name . '.trashinfo';
 		$this->validatePath($target);
@@ -1277,7 +1279,41 @@ class Storage extends AbstractStorage implements TrashInterface
 
 		file_put_contents($target, $info);
 
-		$this->move($uri, '.trash/files/' . $name);
+		try {
+			$this->move($uri, '.trash/files/' . $name);
+		}
+		catch (\Throwable $e) {
+			@unlink($target);
+			throw $e;
+		}
+	}
+
+	/**
+	 * Find a name that is not used in the trash yet: "report.docx", then "report (2).docx", "report (3).docx"…
+	 * The name is reserved by creating its (empty) info file with exclusive mode, so that two
+	 * deletions happening at the same time cannot pick the same one.
+	 */
+	protected function claimTrashName(string $name): string
+	{
+		$dot = strrpos($name, '.');
+		[$base, $ext] = ($dot === false || $dot === 0) ? [$name, ''] : [substr($name, 0, $dot), substr($name, $dot)];
+
+		for ($i = 1; $i <= 10000; $i++) {
+			$candidate = $i === 1 ? $name : mb_strcut($base, 0, max(1, 240 - strlen($ext))) . ' (' . $i . ')' . $ext;
+
+			if (file_exists($this->root . '.trash/files/' . $candidate)) {
+				continue;
+			}
+
+			$fp = @fopen($this->root . '.trash/info/' . $candidate . '.trashinfo', 'x');
+
+			if ($fp) {
+				fclose($fp);
+				return $candidate;
+			}
+		}
+
+		throw new WebDAV_Exception('Could not find a free name in the trash', 507);
 	}
 
 	public function restoreFromTrash(string $uri): void
