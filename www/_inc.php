@@ -12,7 +12,8 @@ require_once __DIR__ . '/../init.php';
 $users = new Users;
 $logged_user = $users->current();
 
-$file = basename($_SERVER['PHP_SELF']);
+// SCRIPT_NAME, not PHP_SELF: PHP_SELF ends with the extra path of "/users/edit.php/login.php", which looked like the login page
+$file = basename($_SERVER['SCRIPT_NAME'] ?? '');
 
 if (!$logged_user
 	&& !in_array($file, ['login.php', 'session.php'])) {
@@ -33,7 +34,7 @@ $tpl->register_function('form_csrf', function (): string {
 	$expire = time() + 1800;
 	$random = random_bytes(10);
 	$action = $_SERVER['REQUEST_URI'];
-	$token = hash_hmac('sha256', $expire . $random . $action, STORAGE_PATH . session_id());
+	$token = hash_hmac('sha256', $expire . $random . $action, SECRET_KEY . session_id());
 
 	return sprintf('<input type="hidden" name="_c_" value="%s:%s:%s" />', $token, base64_encode($random), $expire);
 });
@@ -88,7 +89,7 @@ Translate::setLocale('en_NZ');
 
 function csrf_check(): bool
 {
-	if (empty($_POST['_c_'])) {
+	if (empty($_POST['_c_']) || !is_string($_POST['_c_'])) {
 		return false;
 	}
 
@@ -102,7 +103,7 @@ function csrf_check(): bool
 
 	$action = $_SERVER['REQUEST_URI'];
 
-	$token = hash_hmac('sha256', $expire . $random . $action, STORAGE_PATH . session_id());
+	$token = hash_hmac('sha256', $expire . $random . $action, SECRET_KEY . session_id());
 
 	return hash_equals($token, $verify);
 }
