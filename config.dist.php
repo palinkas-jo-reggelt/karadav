@@ -214,7 +214,8 @@ namespace KaraDAV;
 
 /**
  * LDAP user DN
- * This is used in bind. Use %s for user login string.
+ * This is used in bind. Use %s for user login string, it is escaped as a DN value
+ * (so it must be the value of one attribute, not a whole DN or a user@domain name).
  * @var string
  */
 //const LDAP_LOGIN = 'uid=%s,ou=users,dc=yunohost,dc=org';
