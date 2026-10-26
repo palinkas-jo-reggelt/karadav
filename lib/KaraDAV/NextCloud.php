@@ -341,6 +341,55 @@ class NextCloud extends WebDAV_NextCloud
 		$this->serveThumbnail($uri, $w, $h, false, true);
 	}
 
+	/** Files bigger than this are not decoded to make a thumbnail */
+	const THUMBNAIL_MAX_BYTES = 64 * 1024 * 1024;
+	/** Pictures with more pixels than this are not decoded (50 megapixels, the picture of a good camera) */
+	const THUMBNAIL_MAX_PIXELS = 50000000;
+	const THUMBNAIL_MAX_SIDE = 20000;
+
+	/**
+	 * Only decode JPEG, PNG, GIF and WebP files, recognised by their content, of reasonable dimensions.
+	 * The size is read from the header, nothing is decoded: a few KB can describe a picture needing gigabytes of memory.
+	 * @throws WebDAV_Exception
+	 */
+	static protected function assertThumbnailSource(string $blob): void
+	{
+		$info = @getimagesizefromstring($blob);
+
+		if (!$info || !in_array($info[2], [IMAGETYPE_JPEG, IMAGETYPE_PNG, IMAGETYPE_GIF, IMAGETYPE_WEBP], true)) {
+			throw new WebDAV_Exception('Not an image', 404);
+		}
+
+		[$width, $height] = $info;
+
+		if ($width < 1 || $height < 1 || $width > self::THUMBNAIL_MAX_SIDE || $height > self::THUMBNAIL_MAX_SIDE
+			|| $width * $height > self::THUMBNAIL_MAX_PIXELS) {
+			throw new WebDAV_Exception('Image too large for a thumbnail', 404);
+		}
+	}
+
+	/**
+	 * ImageMagick limits (GD is limited by the memory limit of PHP and the dimensions checked above)
+	 */
+	static protected function limitImageResources(): void
+	{
+		if (!class_exists('Imagick', false)) {
+			return;
+		}
+
+		foreach ([
+			'RESOURCETYPE_MEMORY' => 256 * 1024 * 1024,
+			'RESOURCETYPE_MAP'    => 512 * 1024 * 1024,
+			'RESOURCETYPE_AREA'   => self::THUMBNAIL_MAX_PIXELS,
+			'RESOURCETYPE_DISK'   => 1024 * 1024 * 1024,
+			'RESOURCETYPE_TIME'   => 30,
+		] as $name => $limit) {
+			if (defined('Imagick::' . $name)) {
+				\Imagick::setResourceLimit(constant('Imagick::' . $name), $limit);
+			}
+		}
+	}
+
 	public function serveThumbnail(string $uri, int $width, int $height, bool $crop = false, bool $preview = false): void
 	{
 		if (!ENABLE_THUMBNAILS_OK
@@ -376,9 +425,20 @@ class NextCloud extends WebDAV_NextCloud
 
 		if (!file_exists($cache_path)) {
 			$this->server->log('NC Creating thumbnail (%d): %s', $size, basename($cache_path));
+
+			// The file comes from a user: do not decode anything that is too big, or not what its name says
+			if ((int) $this->storage->get_file_property($uri, 'DAV::getcontentlength', 0) > self::THUMBNAIL_MAX_BYTES) {
+				throw new WebDAV_Exception('Image too large for a thumbnail', 404);
+			}
+
+			$blob = (string) $this->storage->fetch($uri);
+			self::assertThumbnailSource($blob);
+			self::limitImageResources();
+
 			try {
 				$i = new Image;
-				$i->openFromBlob($this->storage->fetch($uri));
+				$i->openFromBlob($blob);
+				unset($blob);
 
 				if ($size === 150) {
 					$i->cropResize($size);
