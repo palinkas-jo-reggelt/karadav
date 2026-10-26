@@ -16,7 +16,9 @@ class Shares
 
 	static public function normalizePath(string $path): string
 	{
-		$path = str_replace('\\', '/', rawurldecode($path));
+		// The path is already decoded (database, WebDAV URI, query string, form): decoding it again would turn
+		// the name of a file like "a%41.txt" into "aA.txt", another file
+		$path = str_replace('\\', '/', $path);
 		$path = preg_replace('!/{2,}!', '/', $path);
 		return trim($path, '/');
 	}
