@@ -261,10 +261,12 @@ JS;
 		}
 
 		$has_images = false;
+		$total = 0;
 
 		foreach ($files as $item => $full) {
 			$rel = ltrim($sub . '/' . $item, '/');
 			$is_img = self::previewKind($item) === 'image';
+			$total += (int) @filesize($full);
 			$has_images = $has_images || $is_img;
 			$lb = $is_img ? sprintf(' data-lb="%s" data-dl="%s"', self::e($this->link('view', $rel)), self::e($this->link('download', $rel))) : '';
 			$rows .= sprintf('<tr><td class="n"><a href="%s"%s>&#128196; %s</a></td><td class="s">%s</td><td class="d">%s</td><td class="a"><a href="%s">Download</a></td></tr>',
@@ -280,8 +282,12 @@ JS;
 			? sprintf('<p><a class="btn" href="%s">Download all as ZIP</a></p>', self::e($this->link('zip', $sub)))
 			: '';
 
-		$body = sprintf('<h1>%s</h1><p class="meta">Shared by %s</p>%s<table>%s</table>',
-			implode(' / ', $crumbs), $owner, $zip, $rows);
+		$stats = count($files) . (count($files) === 1 ? ' file' : ' files')
+			. (count($dirs) ? ', ' . count($dirs) . (count($dirs) === 1 ? ' folder' : ' folders') : '')
+			. ' &middot; ' . ($total ? self::size($total) : '0 B');
+
+		$body = sprintf('<h1>%s</h1><p class="meta">Shared by %s &middot; %s</p>%s<table>%s</table>',
+			implode(' / ', $crumbs), $owner, $stats, $zip, $rows);
 		$csp = $scripts = null;
 
 		if ($has_images) {

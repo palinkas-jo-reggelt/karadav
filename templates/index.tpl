@@ -12,7 +12,7 @@
 	<dd>
 		Trash: {$quota.trash|format_mbytes}.
 		{if $quota.trash}
-			<br /><a href="?empty_trash" class="btn sm">{{Empty trash now}}</a>
+			<br /><a href="{$www_url}trash.php" class="btn sm">{{View and restore}}</a> <a href="?empty_trash" class="btn sm">{{Empty trash now}}</a>
 		{/if}
 	</dd>
 	<dt>WebDAV URL</dt>

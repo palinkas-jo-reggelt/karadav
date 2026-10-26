@@ -15,6 +15,8 @@ class Storage extends AbstractStorage implements TrashInterface
 	protected array $properties = [];
 	protected ?stdClass $quota = null;
 	protected ?string $root;
+	/** Who is really acting (when a user works in a folder shared by another user), for the trash log */
+	public ?User $actor = null;
 
 	const THUMBNAIL_SIZES = [150, 500, 1200];
 
@@ -1254,9 +1256,10 @@ class Storage extends AbstractStorage implements TrashInterface
 		$target = $this->root . '.trash/info/' . $name . '.trashinfo';
 		$this->validatePath($target);
 
-		$info = sprintf("[Trash Info]\nPath=%s\nDeletionDate=%s\n",
+		$info = sprintf("[Trash Info]\nPath=%s\nDeletionDate=%s\nDeletedBy=%s\n",
 			str_replace('%2F', '/', rawurlencode($uri)),
-			date(DATE_RFC3339)
+			date(DATE_RFC3339),
+			rawurlencode(($this->actor ?? $this->user)->login)
 		);
 
 		file_put_contents($target, $info);

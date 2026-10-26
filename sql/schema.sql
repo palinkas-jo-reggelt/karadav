@@ -65,7 +65,8 @@ CREATE TABLE IF NOT EXISTS shares (
 	expiry TEXT NULL,            -- YYYY-MM-DD (valid through the end of that day, UTC) or NULL
 	permissions INTEGER NOT NULL DEFAULT 1,
 	label TEXT NULL,
-	created INTEGER NOT NULL
+	created INTEGER NOT NULL,
+	creator INTEGER NULL         -- user who made the link, if not the owner (folder shared with them)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS shares_token ON shares (token);

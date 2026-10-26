@@ -94,7 +94,7 @@ class Shares
 		return time() > strtotime($share->expiry . ' 23:59:59 UTC');
 	}
 
-	static public function create(User $user, string $path, ?string $password, ?string $expiry, ?string $label): object
+	static public function create(User $user, string $path, ?string $password, ?string $expiry, ?string $label, ?int $creator = null): object
 	{
 		$path = self::normalizePath($path);
 
@@ -112,15 +112,15 @@ class Shares
 		$label = trim((string) $label) ?: null;
 
 		$db = DB::getInstance();
-		$db->run('INSERT INTO shares (user, path, token, password, expiry, permissions, label, created) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
-			$user->id, $path, self::generateToken(), $hash, $expiry, self::PERM_READ, $label, time());
+		$db->run('INSERT INTO shares (user, path, token, password, expiry, permissions, label, created, creator) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
+			$user->id, $path, self::generateToken(), $hash, $expiry, self::PERM_READ, $label, time(), $creator === $user->id ? null : $creator);
 
-		return self::get($db->lastInsertRowID(), $user->id);
+		return self::get($db->lastInsertRowID(), $creator ?? $user->id);
 	}
 
 	static public function get(int $id, int $user_id): ?object
 	{
-		return DB::getInstance()->first('SELECT * FROM shares WHERE id = ? AND user = ?;', $id, $user_id);
+		return DB::getInstance()->first('SELECT * FROM shares WHERE id = ? AND COALESCE(creator, user) = ?;', $id, $user_id);
 	}
 
 	static public function byToken(string $token): ?object
@@ -131,22 +131,23 @@ class Shares
 	/**
 	 * @return object[]
 	 */
-	static public function list(int $user_id, ?string $path = null, bool $subfiles = false): array
+	static public function list(int $user_id, ?string $path = null, bool $subfiles = false, ?int $owner_id = null): array
 	{
 		$db = DB::getInstance();
+		$owner_id ??= $user_id;
 
 		if ($path === null) {
-			return iterator_to_array($db->iterate('SELECT * FROM shares WHERE user = ? ORDER BY id;', $user_id), false);
+			return iterator_to_array($db->iterate('SELECT * FROM shares WHERE COALESCE(creator, user) = ? ORDER BY id;', $user_id), false);
 		}
 
 		$path = self::normalizePath($path);
 
 		if ($subfiles) {
-			$sql = 'SELECT * FROM shares WHERE user = ? AND path LIKE ? ESCAPE \'\\\' ORDER BY id;';
-			return iterator_to_array($db->iterate($sql, $user_id, $db->getPathLikeExpression($path)), false);
+			$sql = 'SELECT * FROM shares WHERE COALESCE(creator, user) = ? AND user = ? AND path LIKE ? ESCAPE \'\\\' ORDER BY id;';
+			return iterator_to_array($db->iterate($sql, $user_id, $owner_id, $db->getPathLikeExpression($path)), false);
 		}
 
-		return iterator_to_array($db->iterate('SELECT * FROM shares WHERE user = ? AND path = ? ORDER BY id;', $user_id, $path), false);
+		return iterator_to_array($db->iterate('SELECT * FROM shares WHERE COALESCE(creator, user) = ? AND user = ? AND path = ? ORDER BY id;', $user_id, $owner_id, $path), false);
 	}
 
 	/**
@@ -175,7 +176,7 @@ class Shares
 	static public function delete(int $id, int $user_id): bool
 	{
 		$db = DB::getInstance();
-		$db->run('DELETE FROM shares WHERE id = ? AND user = ?;', $id, $user_id);
+		$db->run('DELETE FROM shares WHERE id = ? AND COALESCE(creator, user) = ?;', $id, $user_id);
 		return $db->changes() > 0;
 	}
 

@@ -91,8 +91,19 @@ class UserShares
 	static public function delete(int $id, int $user_id): bool
 	{
 		$db = DB::getInstance();
-		$db->run('DELETE FROM user_shares WHERE id = ? AND (owner = ? OR recipient = ?);', $id, $user_id, $user_id);
-		return $db->changes() > 0;
+		$share = $db->first('SELECT * FROM user_shares WHERE id = ? AND (owner = ? OR recipient = ?);', $id, $user_id, $user_id);
+
+		if (!$share) {
+			return false;
+		}
+
+		$db->run('DELETE FROM user_shares WHERE id = ?;', $id);
+
+		// Public links the recipient made from this folder stop working with the share
+		$db->run('DELETE FROM shares WHERE user = ? AND creator = ? AND (path = ? OR path LIKE ? ESCAPE \'\\\');',
+			$share->owner, $share->recipient, $share->path, $db->getPathLikeExpression($share->path));
+
+		return true;
 	}
 
 	/** @return object[] */

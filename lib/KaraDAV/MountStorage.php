@@ -61,6 +61,7 @@ class MountStorage extends Storage
 		if (!isset($this->owner_storages[$id])) {
 			$st = new Storage($this->nextcloud);
 			$st->setUser($mount->owner_user);
+			$st->actor = $this->user;
 			$this->owner_storages[$id] = $st;
 		}
 
@@ -187,10 +188,14 @@ class MountStorage extends Storage
 			$perms = 'G';
 
 			if ($is_root) {
-				$perms = 'S' . $perms . 'D' . ($write ? 'CK' : ''); // D: leave the share (unshare)
+				$perms = 'SR' . $perms . 'D' . ($write ? 'CK' : ''); // S: shared, R: can be shared by link, D: leave the share (unshare)
 			}
-			elseif ($write) {
-				$perms .= 'WDNV' . ($is_dir ? 'CK' : '');
+			else {
+				$perms = 'R' . $perms; // R: can be shared by link
+
+				if ($write) {
+					$perms .= 'WDNV' . ($is_dir ? 'CK' : '');
+				}
 			}
 
 			$props['http://owncloud.org/ns:permissions'] = $perms;

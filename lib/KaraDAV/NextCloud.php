@@ -428,14 +428,58 @@ class NextCloud extends WebDAV_NextCloud
 		return $out;
 	}
 
+	/**
+	 * Where a path of the current user really lives: [owner, path in the owner's folder, creator id or null].
+	 * A path inside a folder shared with the user belongs to the user who owns it.
+	 */
+	protected function shareTarget(string $path): array
+	{
+		$path = Shares::normalizePath($path);
+		[$first, $rest] = explode('/', $path, 2) + [1 => ''];
+
+		foreach (UserShares::forRecipient($this->user->id) as $m) {
+			if ($m->mount !== $first) {
+				continue;
+			}
+
+			$owner = $this->users->getById((int) $m->owner);
+
+			if (!$owner) {
+				break;
+			}
+
+			return [$owner, $m->path . ($rest !== '' ? '/' . $rest : ''), $this->user->id];
+		}
+
+		return [$this->user, $path, null];
+	}
+
+	/** Path as the current user sees it (inside a shared folder: under its mount name) */
+	protected function shareDisplayPath(object $share): string
+	{
+		if ((int) $share->user === $this->user->id) {
+			return $share->path;
+		}
+
+		foreach (UserShares::forRecipient($this->user->id) as $m) {
+			if ((int) $m->owner === (int) $share->user && ($share->path === $m->path || 0 === strpos($share->path, $m->path . '/'))) {
+				return $m->mount . substr($share->path, strlen($m->path));
+			}
+		}
+
+		return $share->path;
+	}
+
 	protected function formatShare(object $share): array
 	{
-		$full = Shares::resolve($this->user->path, $share->path);
+		$owner = (int) $share->user === $this->user->id ? $this->user : ($this->users->getById((int) $share->user) ?? $this->user);
+		$dpath = $this->shareDisplayPath($share);
+		$full = Shares::resolve($owner->path, $share->path);
 		$is_dir = $full !== null && is_dir($full);
-		$id = $this->storage->getFileId($share->path);
+		$id = $this->storage->getFileId($dpath);
 		$has_password = !empty($share->password);
-		$login = $this->user->login;
-		$label = $this->user->label;
+		$login = $owner->login;
+		$label = $owner->label;
 
 		return [
 			'id'                     => (string) $share->id,
@@ -453,7 +497,7 @@ class NextCloud extends WebDAV_NextCloud
 			'note'                   => '',
 			'label'                  => (string) $share->label,
 			'displayname_file_owner' => $label,
-			'path'                   => '/' . $share->path,
+			'path'                   => '/' . $dpath,
 			'item_type'              => $is_dir ? 'folder' : 'file',
 			'mimetype'               => $is_dir ? 'httpd/unix-directory' : ($full ? Storage::mimeType($full) : 'application/octet-stream'),
 			'has_preview'            => false,
@@ -556,7 +600,15 @@ class NextCloud extends WebDAV_NextCloud
 
 					$path = isset($p['path']) && $p['path'] !== '' ? (string) $p['path'] : null;
 					$subfiles = in_array(strtolower((string) ($p['subfiles'] ?? '')), ['1', 'true'], true);
-					$list = Shares::list($this->user->id, $path, $subfiles);
+					$owner_id = null;
+					$opath = $path;
+
+					if ($path !== null) {
+						[$o, $opath, $creator] = $this->shareTarget($path);
+						$owner_id = $o->id;
+					}
+
+					$list = Shares::list($this->user->id, $opath, $subfiles, $owner_id);
 
 					$out = array_map([$this, 'formatShare'], $list);
 
@@ -601,12 +653,15 @@ class NextCloud extends WebDAV_NextCloud
 						return $this->ocsFailure(400, 'Please specify a file or folder path');
 					}
 
+					[$owner, $opath, $creator] = $this->shareTarget((string) $p['path']);
+
 					$share = Shares::create(
-						$this->user,
-						(string) $p['path'],
+						$owner,
+						$opath,
 						isset($p['password']) ? (string) $p['password'] : null,
 						isset($p['expireDate']) ? (string) $p['expireDate'] : null,
-						(string) ($p['label'] ?? $p['name'] ?? '')
+						(string) ($p['label'] ?? $p['name'] ?? ''),
+						$creator
 					);
 
 					return $this->nc_ocs($this->formatShare($share));
