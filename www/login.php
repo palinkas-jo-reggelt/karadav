@@ -24,7 +24,7 @@ if (!empty($_POST['login']) && !empty($_POST['password']) && csrf_check()) {
 		Throttle::sendHeaders($wait);
 		$error = 2;
 	}
-	elseif ($users->login($_POST['login'], $_POST['password'], !empty($_POST['permanent']))) {
+	elseif ($users->login($_POST['login'], $_POST['password'], !empty($_POST['permanent']), true)) {
 		$url = null;
 
 		if (!empty($_POST['nc']) && $_POST['nc'] == 'redirect') {

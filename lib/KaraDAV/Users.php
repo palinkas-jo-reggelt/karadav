@@ -76,13 +76,11 @@ class Users
 		if (isset($_COOKIE[session_name()]) && !isset($_SESSION)) {
 			session_start();
 		}
-		elseif (!empty($_COOKIE['permanent'])
-			&& ($user = $db->first('SELECT * FROM users WHERE session_id = ?;', $_COOKIE['permanent']))) {
-			@session_start();
+		elseif (!empty($_COOKIE['permanent']) && is_string($_COOKIE['permanent'])
+			&& ($user = $db->first('SELECT * FROM users WHERE session_id = ?;', self::hashToken($_COOKIE['permanent'])))) {
+			$this->startSession(User::from($user), true);
 
-			$_SESSION['user'] = User::from($user);
-
-			// Make sure this session_id cannot be reused
+			// Make sure this token cannot be reused
 			$this->setPermanentSession($user->id);
 		}
 
@@ -94,7 +92,41 @@ class Users
 
 		$this->current = $_SESSION['user'] ?? null;
 
+		// A session does not survive a change of the password of its account
+		if ($this->current && !hash_equals(self::sessionMarker($this->current), (string) ($_SESSION['auth'] ?? ''))) {
+			unset($_SESSION['user'], $_SESSION['auth']);
+			$this->current = null;
+		}
+
 		return $this->current;
+	}
+
+	/**
+	 * Value stored in the session, that stops matching when the password of the account changes
+	 */
+	static protected function sessionMarker(User $user): string
+	{
+		return hash_hmac('sha256', $user->password, SECRET_KEY);
+	}
+
+	static protected function hashToken(string $token): string
+	{
+		return hash('sha256', $token);
+	}
+
+	/**
+	 * @param bool $new_id Give the session a new identifier, so that one chosen by someone else before the login is useless
+	 */
+	protected function startSession(User $user, bool $new_id = false): void
+	{
+		@session_start();
+
+		if ($new_id && session_status() === PHP_SESSION_ACTIVE && !headers_sent()) {
+			session_regenerate_id(true);
+		}
+
+		$_SESSION['user'] = $user;
+		$_SESSION['auth'] = self::sessionMarker($user);
 	}
 
 	public function setCurrent(string $login): bool
@@ -109,7 +141,7 @@ class Users
 		return true;
 	}
 
-	public function login(?string $login, ?string $password, bool $permanent = false): ?User
+	public function login(?string $login, ?string $password, bool $permanent = false, bool $new_session = false): ?User
 	{
 		$login = null !== $login ? strtolower(trim($login)) : null;
 
@@ -131,7 +163,7 @@ class Users
 			return null;
 		}
 
-		$user = $this->checkCredentials($login, $password, $permanent);
+		$user = $this->checkCredentials($login, $password, $permanent, $new_session);
 
 		if (!$user) {
 			Throttle::fail($subject);
@@ -140,7 +172,7 @@ class Users
 		return $user;
 	}
 
-	protected function checkCredentials(string $login, string $password, bool $permanent): ?User
+	protected function checkCredentials(string $login, string $password, bool $permanent, bool $new_session = false): ?User
 	{
 		$ok = false;
 
@@ -186,8 +218,7 @@ class Users
 			return null;
 		}
 
-		@session_start();
-		$_SESSION['user'] = $user;
+		$this->startSession($user, $new_session);
 
 		if ($permanent) {
 			$this->setPermanentSession($user->id);
@@ -198,9 +229,11 @@ class Users
 
 	protected function setPermanentSession(int $id_user)
 	{
-		DB::getInstance()->run('UPDATE users SET session_id = ? WHERE id = ?;', session_id(), $id_user);
+		// Not the session id: a token of its own, of which only a hash is stored
+		$token = bin2hex(random_bytes(24));
+		DB::getInstance()->run('UPDATE users SET session_id = ? WHERE id = ?;', self::hashToken($token), $id_user);
 
-		setcookie('permanent', session_id(), [
+		setcookie('permanent', $token, [
 			'expires'  => time() + 3600*24*365,
 			'path'     => '/',
 			'httponly' => true,
@@ -322,9 +355,8 @@ class Users
 			return null;
 		}
 
-		@session_start();
 		$user = User::from($user);
-		$_SESSION['user'] = $user;
+		$this->startSession($user);
 
 		return $user;
 	}
