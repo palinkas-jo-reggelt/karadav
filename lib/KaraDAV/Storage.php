@@ -725,7 +725,8 @@ class Storage extends AbstractStorage implements TrashInterface
 		if (false === $move) {
 			$quota = $this->getQuota();
 
-			if (self::compareQuotaSafe($quota->free, self::getFilesize($source))) {
+			// The size of everything that will be copied, not of the folder entry
+			if (self::compareQuotaSafe($quota->free, self::getTreeSize($source))) {
 				throw new WebDAV_Exception('Your quota is exhausted', 507);
 			}
 		}
@@ -1115,6 +1116,15 @@ class Storage extends AbstractStorage implements TrashInterface
 		}
 
 		return strrev($result);
+	}
+
+	/**
+	 * Size of a file, or of everything in a directory
+	 * @return int|string
+	 */
+	static public function getTreeSize(string $path): int|string
+	{
+		return is_dir($path) ? self::getDirectorySize($path) : (self::getFileSize($path) ?: 0);
 	}
 
 	/**
