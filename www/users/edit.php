@@ -16,7 +16,8 @@ else {
 }
 
 if (!$user) {
-	throw new \LogicException('This user does not exist');
+	http_response_code(404);
+	exit(_('This user does not exist'));
 }
 
 form_exec_if('save', function () use ($ldap, $user, $logged_user) {

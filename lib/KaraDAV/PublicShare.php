@@ -184,7 +184,7 @@ JS;
 				setcookie($this->cookieName(), $this->cookieValue(), [
 					'expires'  => 0,
 					'path'     => '/',
-					'secure'   => !empty($_SERVER['HTTPS']),
+					'secure'   => !empty($_SERVER['HTTPS']) || parse_url(WWW_URL, PHP_URL_SCHEME) === 'https',
 					'httponly' => true,
 					'samesite' => 'Lax',
 				]);

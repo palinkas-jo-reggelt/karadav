@@ -186,7 +186,7 @@ if (!file_exists(DB_FILE)) {
 	$parent = dirname(DB_FILE);
 
 	if (!file_exists($parent)) {
-		@mkdir($parent, 0777, true);
+		@mkdir($parent, 0770, true);
 	}
 
 	if (!is_writable($parent)) {

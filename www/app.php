@@ -21,7 +21,8 @@ elseif (EXTERNAL_APPS && array_key_exists($app, EXTERNAL_APPS)) {
 	$app_url = str_replace('%sessionid%', rawurlencode(session_id()), $app_url);
 }
 else {
-	throw new UserException('Unknown app');
+	http_response_code(404);
+	exit(_('Unknown app'));
 }
 
 $tpl->assign(compact('app', 'app_url', 'title'));

@@ -9,7 +9,8 @@ require_once __DIR__ . '/_inc.php';
 $user = $users->getById((int) $_GET['id']);
 
 if (!$user) {
-	throw new \LogicException('This user does not exist');
+	http_response_code(404);
+	exit(_('This user does not exist'));
 }
 
 form_exec_if('delete', function () use ($user, $logged_user) {

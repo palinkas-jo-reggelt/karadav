@@ -220,7 +220,7 @@ class NextCloud extends WebDAV_NextCloud
 		$this->cleanChunks();
 
 		$path = $this->temporary_chunks_path . '/' . $login . '/' . $name;
-		@mkdir($path, 0777, true);
+		@mkdir($path, 0770, true);
 
 		$file_path = $path . '/' . $part;
 
@@ -483,7 +483,7 @@ class NextCloud extends WebDAV_NextCloud
 					$i->resize($size);
 				}
 
-				$perms = @fileperms(dirname(dirname(dirname($cache_path)))) ?: 0777;
+				$perms = @fileperms(dirname(dirname(dirname($cache_path)))) ?: 0770;
 				@mkdir(dirname($cache_path), $perms, true);
 				$i->save($cache_path, 'webp');
 				unset($i);
