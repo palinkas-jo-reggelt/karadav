@@ -13,6 +13,7 @@ class FilePreview
 	const ZIP_MAX_ENTRIES = 3000;
 	const XML_MAX = 30 * 1024 * 1024;
 	const TEXT_MAX = 1000000;
+	const RTF_MAX_DEPTH = 200;
 
 	const KINDS = [
 		'csv' => 'table', 'tsv' => 'table',
@@ -468,11 +469,23 @@ class FilePreview
 		$ignore = false;
 		$skip = 0;
 		$groupStart = false;
+		// A byte of the code page always gives the same text: convert each one once, not each time it appears
+		$bytes = [];
 
 		for ($i = 0; $i < $len; $i++) {
+			// What follows could not be shown anyway (see paragraphs())
+			if (strlen($out) > self::TEXT_MAX * 2) {
+				break;
+			}
+
 			$c = $rtf[$i];
 
 			if ($c === '{') {
+				// No real document nests groups that deep, a file made of "{" would only take up memory
+				if (count($stack) >= self::RTF_MAX_DEPTH) {
+					return null;
+				}
+
 				$stack[] = $ignore;
 				$groupStart = true;
 				continue;
@@ -493,7 +506,7 @@ class FilePreview
 					$skip--;
 				}
 				elseif (!$ignore) {
-					$out .= ord($c) >= 0x80 ? self::legacy($c, $cp) : $c;
+					$out .= ord($c) >= 0x80 ? ($bytes[$c] ??= self::legacy($c, $cp)) : $c;
 				}
 
 				$groupStart = false;
@@ -526,7 +539,8 @@ class FilePreview
 					$skip--;
 				}
 				elseif (!$ignore && ctype_xdigit($hex)) {
-					$out .= self::legacy(chr(hexdec($hex)), $cp);
+					$byte = chr(hexdec($hex));
+					$out .= $bytes[$byte] ??= self::legacy($byte, $cp);
 				}
 
 				$groupStart = false;
