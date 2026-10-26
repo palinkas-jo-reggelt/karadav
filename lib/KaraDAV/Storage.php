@@ -585,15 +585,25 @@ class Storage extends AbstractStorage implements TrashInterface
 		$tmp_dir = sprintf(STORAGE_PATH, '_tmp');
 
 		if (!file_exists($tmp_dir)) {
-			@mkdir($tmp_dir, 0777, true);
+			@mkdir($tmp_dir, 0770, true);
 		}
 
 		if (!is_writeable($tmp_dir)) {
 			throw new \RuntimeException('Cannot write to temporary storage path: ' . $tmp_dir);
 		}
 
-		$tmp_file = $tmp_dir . sha1($target);
+		// Two uploads to the same file at the same time must not write in the same temporary file
+		$tmp_file = $tmp_dir . '/' . bin2hex(random_bytes(12));
 		$out = fopen($tmp_file, 'w');
+
+		// Uploads that were interrupted leave their temporary file behind
+		if (random_int(1, 50) === 1) {
+			foreach (glob($tmp_dir . '/*') ?: [] as $old) {
+				if (is_file($old) && filemtime($old) < time() - 86400) {
+					@unlink($old);
+				}
+			}
+		}
 
 		while (!feof($pointer)) {
 			$bytes = fread($pointer, 8192);
