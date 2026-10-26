@@ -34,6 +34,83 @@ If you are on a 32-bits system, the `curl` extension is required (`apt install p
 </Directory>
 ```
 
+## Example Apache vhost with HTTPS and mod_fcgid (Windows / XAMPP)
+
+This is a complete setup where Apache is the first server reached from the internet, serves PHP through `mod_fcgid` and handles the certificate. Replace the host name, e-mail address and paths. The modules `rewrite`, `headers`, `ssl` and `fcgid` must be loaded.
+
+```
+<VirtualHost *:80>
+	ServerAdmin admin@example.com
+	ServerName files.example.com
+	RewriteEngine On
+	RewriteCond %{HTTPS} off
+	# Use a fixed host name: %{HTTP_HOST} comes from the client and would allow open redirects
+	RewriteRule ^(.*)$ https://files.example.com$1 [R=301,L]
+	ErrorLog "logs/files.example.com-error.log"
+</VirtualHost>
+
+<VirtualHost *:443>
+	ServerAdmin admin@example.com
+	ServerName files.example.com
+	DocumentRoot "C:/xampp/www/karadav/www"
+	ErrorLog "logs/files.example.com-error.log"
+
+	SSLEngine on
+	SSLCertificateFile "C:/xampp/certificates/files.example.com-crt.pem"
+	SSLCertificateKeyFile "C:/xampp/certificates/files.example.com-key.pem"
+	SSLCertificateChainFile "C:/xampp/certificates/files.example.com-chain.pem"
+
+	# Required for Basic authentication (WebDAV and Nextcloud clients)
+	FcgidPassHeader Authorization
+	# Uploads and downloads: mod_fcgid refuses requests over 128 KB and stops them after 5 minutes by default
+	FcgidMaxRequestLen 1073741824
+	FcgidIOTimeout 3600
+	FcgidBusyTimeout 3600
+
+	Header always set Strict-Transport-Security "max-age=31536000"
+	Header always set X-Frame-Options "SAMEORIGIN"
+
+	<Directory "C:/xampp/www/karadav/www">
+		# Keep the options your global configuration needs to run PHP with mod_fcgid (often +ExecCGI)
+		Options -Indexes -MultiViews
+		AllowOverride None
+		Require all granted
+		DirectoryIndex index.php
+
+		RewriteEngine On
+		RewriteBase /
+		RewriteCond %{REQUEST_FILENAME} !-d
+		RewriteCond %{REQUEST_FILENAME} !-f
+		RewriteRule ^.*$ /_router.php [L]
+	</Directory>
+</VirtualHost>
+```
+
+Notes:
+
+* Do not add a `<Limit>` or `<LimitExcept>` block: WebDAV needs `PROPFIND`, `MKCOL`, `MOVE`, `COPY` and `LOCK`.
+* Set the complete address in `config.local.php`, so that cookies are marked `Secure` and links use `https`:
+
+  ```php
+  const WWW_URL = 'https://files.example.com/';
+  ```
+* The web server user must be able to write to the KaraDAV folder (for `error.log`) and to the `data` folder.
+
+### Client IP addresses and failed logins
+
+KaraDAV slows down password guessing by counting failed logins per IP address (see the `THROTTLE_*` settings in `config.dist.php`), so it has to know the real address of each visitor.
+
+* **Apache is the first server reached by visitors** (as above): nothing to do, the address of the connection is the visitor's.
+* **Another proxy is in front of Apache** (Cloudflare, nginx, a proxy manager…): all visitors would share the address of the proxy and block each other. Let Apache restore the real address, for requests coming from your proxy only:
+
+  ```
+  LoadModule remoteip_module modules/mod_remoteip.so
+  RemoteIPHeader X-Forwarded-For
+  RemoteIPInternalProxy 192.168.1.10
+  ```
+
+  Replace the address by the one of your proxy, which must set that header itself and replace any value sent by the client. If you cannot use `mod_remoteip`, set `CLIENT_IP_HEADER` in `config.local.php` instead (eg. `const CLIENT_IP_HEADER = 'HTTP_X_FORWARDED_FOR';`), but only if the web server cannot be reached without going through the proxy: anyone could otherwise choose their own address.
+
 ## Using a sub-directory for install
 
 Let's say you want KaraDAV to be available at `http://me.localhost/dav/`
