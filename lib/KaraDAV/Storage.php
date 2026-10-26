@@ -1336,14 +1336,68 @@ class Storage extends AbstractStorage implements TrashInterface
 		}
 
 		$info = $this->getTrashInfo($uri);
-		$dest = $info['Path'] ?? $uri;
-		$this->validatePath($dest);
+		$dest = $this->getRestorePath($uri, $info['Path'] ?? null);
 
-		if ($info) {
+		// Nothing already there is ever replaced: the restored item gets a different name instead
+		$this->move('.trash/files/' . $uri, $dest);
+
+		if (file_exists($this->root . '.trash/info/' . $uri . '.trashinfo')) {
 			$this->delete('.trash/info/' . $uri . '.trashinfo');
 		}
+	}
 
-		$this->move('.trash/files/' . $uri, $dest);
+	/**
+	 * Where an item of the trash goes back: its original path, if that path is usable, and a name
+	 * that is not taken. The trash information is a file the user can write, so it is not trusted.
+	 * Otherwise it goes to the root folder under the name it has in the trash.
+	 */
+	protected function getRestorePath(string $trash_name, ?string $original): string
+	{
+		$path = trim(str_replace('\\', '/', (string) $original), '/');
+
+		$usable = $path !== ''
+			&& !str_contains($path, "\0")
+			&& !preg_match('!(?:^|/)\.\.?(?:/|$)!', $path)
+			&& 0 !== strpos($path, '.trash')
+			&& $this->isPathValid($this->root . $path)
+			&& strlen(basename($path)) <= 250;
+
+		// A part of the path that is now a file cannot be a folder
+		if ($usable) {
+			$dir = '';
+
+			foreach (array_slice(explode('/', $path), 0, -1) as $part) {
+				$dir .= ($dir === '' ? '' : '/') . $part;
+
+				if (file_exists($this->root . $dir) && !is_dir($this->root . $dir)) {
+					$usable = false;
+					break;
+				}
+			}
+		}
+
+		if (!$usable) {
+			$path = $trash_name;
+		}
+
+		if (!file_exists($this->root . $path)) {
+			return $path;
+		}
+
+		$dir = dirname($path) === '.' ? '' : dirname($path) . '/';
+		$name = basename($path);
+		$dot = strrpos($name, '.');
+		[$base, $ext] = ($dot === false || $dot === 0 || is_dir($this->root . $path)) ? [$name, ''] : [substr($name, 0, $dot), substr($name, $dot)];
+
+		for ($i = 1; $i <= 1000; $i++) {
+			$candidate = $dir . mb_strcut($base, 0, max(1, 230 - strlen($ext))) . ' (restored' . ($i > 1 ? ' ' . $i : '') . ')' . $ext;
+
+			if (!file_exists($this->root . $candidate)) {
+				return $candidate;
+			}
+		}
+
+		throw new WebDAV_Exception('Could not find a free name to restore this item', 409);
 	}
 
 	public function emptyTrash(): void
@@ -1355,7 +1409,10 @@ class Storage extends AbstractStorage implements TrashInterface
 	public function deleteFromTrash(string $uri): void
 	{
 		$this->delete('.trash/files/' . $uri);
-		$this->delete('.trash/info/' . $uri . '.trashinfo');
+
+		if (file_exists($this->root . '.trash/info/' . $uri . '.trashinfo')) {
+			$this->delete('.trash/info/' . $uri . '.trashinfo');
+		}
 	}
 
 	protected function getTrashInfo(string $uri): ?array
@@ -1371,7 +1428,8 @@ class Storage extends AbstractStorage implements TrashInterface
 		$info['DeletionDate'] = strtotime($info['DeletionDate']);
 		$info['InfoFilePath'] = $info_file;
 
-		if (!$this->isPathValid($info['Path'])) {
+		// The path is relative to the folder of the user
+		if (!$this->isPathValid($this->root . ltrim($info['Path'], '/'))) {
 			return null;
 		}
 
@@ -1429,8 +1487,8 @@ class Storage extends AbstractStorage implements TrashInterface
 
 			yield $name => [
 				NextCloud::PROP_NC_TRASHBIN_FILENAME => $name,
-				NextCloud::PROP_NC_TRASHBIN_ORIGINAL_LOCATION => $info['Path'],
-				NextCloud::PROP_NC_TRASHBIN_DELETION_TIME => $info['DeletionDate'],
+				NextCloud::PROP_NC_TRASHBIN_ORIGINAL_LOCATION => $info['Path'] ?? $name,
+				NextCloud::PROP_NC_TRASHBIN_DELETION_TIME => $info['DeletionDate'] ?? filemtime($target),
 				NextCloud::PROP_OC_SIZE => $size,
 				NextCloud::PROP_OC_ID => $this->getFileId($name),
 				'DAV::getcontentlength' => $size,
