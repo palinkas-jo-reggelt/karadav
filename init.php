@@ -115,7 +115,8 @@ define('KaraDAV\ENABLE_THUMBNAILS_OK', $th);
 
 // Create random secret key
 if (!defined('KaraDAV\SECRET_KEY')) {
-	$cfg = file_exists($cfg_file) ? file_get_contents($cfg_file) : "<?php\nnamespace KaraDAV;\n\n";
+	$cfg_is_new = !file_exists($cfg_file);
+	$cfg = $cfg_is_new ? "<?php\nnamespace KaraDAV;\n\n" : file_get_contents($cfg_file);
 
 	if (false == strpos($cfg, 'SECRET_KEY')) {
 		$secret = base64_encode(random_bytes(16));
@@ -133,7 +134,19 @@ if (!defined('KaraDAV\SECRET_KEY')) {
 
 		$cfg = preg_replace('/\?>\s*$|$/', $c, $cfg, 1);
 
+		if ($cfg_is_new) {
+			// Created by us and about to contain the secret key: for us only
+			@touch($cfg_file);
+			@chmod($cfg_file, 0600);
+		}
+
 		file_put_contents($cfg_file, $cfg);
+
+		// The file now contains the secret key: take away the access of others, if it is ours to change
+		if (!$cfg_is_new && DIRECTORY_SEPARATOR === '/' && ($perms = @fileperms($cfg_file)) !== false && ($perms & 0007)
+			&& (!function_exists('posix_geteuid') || @fileowner($cfg_file) === posix_geteuid())) {
+			@chmod($cfg_file, $perms & 0770);
+		}
 
 		// The next request must not run a cached copy of the file, without the key
 		if (function_exists('opcache_invalidate')) {
@@ -206,17 +219,51 @@ else {
 	$db->upgradeVersion();
 }
 
+/**
+ * Passwords, tokens and cookies must not end up in the log file, as it is usually
+ * readable by more people than the data of the users
+ */
+function http_log_redact(string $message): string
+{
+	// Authorization: Basic xxx, Bearer xxx…
+	$message = preg_replace('/^(\s*Authorization:).*$/mi', '$1 ***', $message);
+
+	// Cookie and Set-Cookie: keep the names, hide the values
+	$message = preg_replace_callback('/^(\s*(?:Set-)?Cookie:)(.*)$/mi',
+		fn ($m) => $m[1] . preg_replace('/=[^;,\s]*/', '=***', $m[2]), $message);
+
+	// Parameters of the query string: tokens of WOPI, direct download, login flow…
+	$message = preg_replace('/([?&;](?:access_token|token|h|flow|password|api_key|apikey|secret|_c_)=)[^&\s"]+/i', '$1***', $message);
+
+	// JSON replies containing app passwords or tokens
+	$message = preg_replace('/("(?:appPassword|password|access_token|token|login_token|poll_token|secret)"\s*:\s*")[^"]*(")/i', '$1***$2', $message);
+
+	// nc://login/server:…&user:…&password:…
+	$message = preg_replace('/(&password:)\S+/i', '$1***', $message);
+
+	// The cookie of a password-protected public link has the token of the link in its name
+	$message = preg_replace('/\bks_[A-Za-z0-9]+(?==)/', 'ks_***', $message);
+
+	// Public links: /s/<token>
+	$message = preg_replace('~(?<![A-Za-z_-])(/s/)[A-Za-z0-9]{16}(?![A-Za-z0-9])~', '$1***', $message);
+
+	return $message;
+}
+
 function http_log(string $message, ...$params): void
 {
 	if (!LOG_FILE) {
 		return;
 	}
 
-	$msg = vsprintf($message, $params) . "\n\n";
+	$msg = http_log_redact(vsprintf($message, $params)) . "\n\n";
 
-	if (LOG_FILE) {
-		file_put_contents(LOG_FILE, $msg, FILE_APPEND);
+	if (!file_exists(LOG_FILE)) {
+		@touch(LOG_FILE);
+		@chmod(LOG_FILE, 0600);
 	}
+
+	file_put_contents(LOG_FILE, $msg, FILE_APPEND);
 }
 
 if (LOG_FILE && isset($_SERVER['REMOTE_ADDR'])) {

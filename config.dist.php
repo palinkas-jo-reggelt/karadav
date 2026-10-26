@@ -126,7 +126,9 @@ namespace KaraDAV;
 
 /**
  * Path to a log file (eg. __DIR__ . '/debug.log')
- * This will log all HTTP requests and responses received by the server
+ * This will log all HTTP requests and responses received by the server.
+ * Passwords, Authorization headers, cookie values and tokens are replaced by *** and the file is
+ * created readable by its owner only, but it still lists who accessed what: only use it to debug.
  * @var string|null
  */
 //const LOG_FILE = null;
