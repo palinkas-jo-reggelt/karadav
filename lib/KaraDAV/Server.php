@@ -64,7 +64,19 @@ class Server
 			return false;
 		}
 
-		$user = $this->users->login($_SERVER['PHP_AUTH_USER'] ?? null, $_SERVER['PHP_AUTH_PW'] ?? null);
+		$login = $_SERVER['PHP_AUTH_USER'] ?? null;
+
+		if ($login !== null && isset($_SERVER['PHP_AUTH_PW']) && !$this->users->current()) {
+			$wait = Throttle::wait('user:' . strtolower(trim($login)));
+
+			if ($wait > 0) {
+				Throttle::sendHeaders($wait);
+				echo 'Too many failed login attempts, please try again later.';
+				return true;
+			}
+		}
+
+		$user = $this->users->login($login, $_SERVER['PHP_AUTH_PW'] ?? null);
 
 		if (!$user) {
 			http_response_code(401);

@@ -301,6 +301,36 @@ namespace KaraDAV;
 //const ERRORS_REPORT_URL = null;
 
 /**
+ * Slow down password guessing (login form, WebDAV/Nextcloud clients, password-protected links).
+ *
+ * Failed attempts are counted over the last THROTTLE_WINDOW seconds. When a limit is reached
+ * the client gets "429 Too Many Requests" until the oldest failure leaves the window:
+ *  - THROTTLE_PER_IP: failures from one IP address, whatever the account
+ *  - THROTTLE_PER_ACCOUNT_AND_IP: failures from one IP address against one account
+ *  - THROTTLE_PER_ACCOUNT: failures against one account, from anywhere. Keep it high: someone who
+ *    wants to lock an account out has to reach it, and a real user is locked out too.
+ * Set a limit to 0 to disable it.
+ * Defaults: 900 seconds, 50, 10, 100
+ *
+ * @var int
+ */
+//const THROTTLE_WINDOW = 900;
+//const THROTTLE_PER_IP = 50;
+//const THROTTLE_PER_ACCOUNT_AND_IP = 10;
+//const THROTTLE_PER_ACCOUNT = 100;
+
+/**
+ * Name of the $_SERVER entry that holds the real client IP address, if KaraDAV is behind a
+ * reverse proxy (eg. 'HTTP_X_FORWARDED_FOR' or 'HTTP_X_REAL_IP'). The proxy must set it itself, replacing
+ * any value sent by the client, or attackers can pick their own address. The last address of the
+ * list is used. Without it, the address of the connection is used, which is the proxy's.
+ * Default: NULL
+ *
+ * @var string|null
+ */
+//const CLIENT_IP_HEADER = 'HTTP_X_FORWARDED_FOR';
+
+/**
  * Randomly generated secret key
  * Usually you won't need to fill this constant. A random secret key will be generated
  * and written to this file when the first access is made.

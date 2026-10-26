@@ -124,7 +124,24 @@ class Users
 			return null;
 		}
 
-		// If not, try to login
+		// Too many failed attempts: do not even look at the password
+		$subject = 'user:' . $login;
+
+		if (Throttle::wait($subject) > 0) {
+			return null;
+		}
+
+		$user = $this->checkCredentials($login, $password, $permanent);
+
+		if (!$user) {
+			Throttle::fail($subject);
+		}
+
+		return $user;
+	}
+
+	protected function checkCredentials(string $login, string $password, bool $permanent): ?User
+	{
 		$ok = false;
 
 		if (LDAP::enabled()) {
@@ -149,6 +166,10 @@ class Users
 		$user = $this->get($login);
 
 		if (!$user && !$ok) {
+			// Same work as for an existing account, so that the response time does not tell which logins exist
+			static $dummy = null;
+			$dummy ??= password_hash(bin2hex(random_bytes(8)), \PASSWORD_DEFAULT);
+			password_verify(trim($password), $dummy);
 			return null;
 		}
 		elseif (!$user && $ok) {

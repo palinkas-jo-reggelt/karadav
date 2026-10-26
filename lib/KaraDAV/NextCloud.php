@@ -44,11 +44,21 @@ class NextCloud extends WebDAV_NextCloud
 
 	public function auth(?string $login, ?string $password): bool
 	{
-		$user = $this->users->login($login, $password);
+		// Someone with a session does not need to be checked again
+		if ($login !== null && $password !== null && !$this->users->current()) {
+			$wait = Throttle::wait('user:' . strtolower(trim($login)));
+
+			if ($wait > 0) {
+				Throttle::sendHeaders($wait);
+				throw new WebDAV_Exception('Too many failed login attempts, please try again later', 429);
+			}
+		}
+
+		// App passwords first: a valid one must not count as a failed password login
+		$user = $this->users->appSessionLogin($login, $password);
 
 		if (!$user) {
-			// Try app session
-			$user = $this->users->appSessionLogin($login, $password);
+			$user = $this->users->login($login, $password);
 		}
 
 		if (!$user) {

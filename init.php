@@ -77,6 +77,11 @@ $defaults = [
 	'LDAP_FIND_USER'         => null,
 	'LDAP_FIND_IS_ADMIN'     => null,
 	'BLOCK_IOS_APPS'         => true,
+	'CLIENT_IP_HEADER'       => null,
+	'THROTTLE_WINDOW'        => 900,
+	'THROTTLE_PER_IP'        => 50,
+	'THROTTLE_PER_ACCOUNT_AND_IP' => 10,
+	'THROTTLE_PER_ACCOUNT'   => 100,
 	'SHARE_SITE_NAME'        => '',
 	'SHARE_LOGO_URL'         => '',
 ];

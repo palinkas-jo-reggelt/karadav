@@ -20,7 +20,16 @@ if (!$pw) {
 	}
 }
 
-if (!$pw || !hash_equals(EXTERNAL_API_KEY, $pw)) {
+if ($pw && ($wait = Throttle::wait('api')) > 0) {
+	Throttle::sendHeaders($wait);
+	exit;
+}
+
+if (!$pw || !EXTERNAL_API_KEY || !hash_equals(EXTERNAL_API_KEY, $pw)) {
+	if ($pw) {
+		Throttle::fail('api');
+	}
+
 	http_response_code(403);
 	exit;
 }

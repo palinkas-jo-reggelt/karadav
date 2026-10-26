@@ -4,7 +4,9 @@
 {if $error === -1}
 	<p class="info">{{You are logged in, you can close this window or tab and go back to the app.}}</p>
 {else}
-	{if $error}
+	{if $error === 2}
+		<p class="error">{{Too many failed attempts. Please wait a few minutes before trying again.}}</p>
+	{elseif $error}
 		<p class="error">{{Invalid login or password}}</p>
 	{elseif $_GET.logout}
 		<p class="info">{{You have logged out}}</p>

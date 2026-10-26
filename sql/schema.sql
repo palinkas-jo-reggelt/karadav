@@ -84,3 +84,11 @@ CREATE TABLE IF NOT EXISTS user_shares (
 
 CREATE UNIQUE INDEX IF NOT EXISTS user_shares_mount ON user_shares (recipient, mount);
 CREATE UNIQUE INDEX IF NOT EXISTS user_shares_target ON user_shares (owner, path, recipient);
+
+-- Failed login attempts, to slow down password guessing
+CREATE TABLE IF NOT EXISTS auth_failures (
+	scope TEXT NOT NULL,
+	time INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS auth_failures_scope ON auth_failures (scope, time);

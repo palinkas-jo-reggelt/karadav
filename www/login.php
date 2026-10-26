@@ -13,8 +13,18 @@ if (empty($_GET['nc']) && $users->current()) {
 
 $error = 0;
 
+$wait = 0;
+
 if (!empty($_POST['login']) && !empty($_POST['password']) && csrf_check()) {
-	if ($users->login($_POST['login'], $_POST['password'], !empty($_POST['permanent']))) {
+	if (!$users->current()) {
+		$wait = Throttle::wait('user:' . strtolower(trim((string) $_POST['login'])));
+	}
+
+	if ($wait > 0) {
+		Throttle::sendHeaders($wait);
+		$error = 2;
+	}
+	elseif ($users->login($_POST['login'], $_POST['password'], !empty($_POST['permanent']))) {
 		$url = null;
 
 		if (!empty($_POST['nc']) && $_POST['nc'] == 'redirect') {

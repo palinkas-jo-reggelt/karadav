@@ -171,9 +171,16 @@ JS;
 		}
 
 		$message = null;
+		$code = 200;
+		$subject = 'share:' . $this->share->token;
 
 		if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && isset($_POST['password'])) {
-			if (password_verify((string) $_POST['password'], $this->share->password)) {
+			if (($wait = Throttle::wait($subject)) > 0) {
+				Throttle::sendHeaders($wait);
+				$code = 429;
+				$message = 'Too many wrong passwords. Please wait a few minutes before trying again.';
+			}
+			elseif (password_verify((string) $_POST['password'], $this->share->password)) {
 				setcookie($this->cookieName(), $this->cookieValue(), [
 					'expires'  => 0,
 					'path'     => '/',
@@ -186,9 +193,11 @@ JS;
 				header('Location: ' . $_SERVER['REQUEST_URI'], true, 303);
 				return false;
 			}
-
-			usleep(700000); // slow down guessing
-			$message = 'Wrong password.';
+			else {
+				Throttle::fail($subject);
+				$code = 403;
+				$message = 'Wrong password.';
+			}
 		}
 
 		$form = '<form method="post"><p>This item is protected by a password.</p>'
@@ -196,7 +205,7 @@ JS;
 			. '<p><input type="password" name="password" autofocus required placeholder="Password"> '
 			. '<button type="submit">Continue</button></p></form>';
 
-		http_response_code($message ? 403 : 200);
+		http_response_code($code);
 		$this->layout('Password required', $form);
 		return false;
 	}
