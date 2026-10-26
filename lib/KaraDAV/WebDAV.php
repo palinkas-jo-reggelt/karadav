@@ -35,6 +35,44 @@ class WebDAV extends WebDAV_Server
 		return $out;
 	}
 
+	/**
+	 * Content types a browser renders as an active document, able to run scripts with the
+	 * origin of this server: they must never be displayed inline (a user, or someone who can
+	 * write in a folder shared with them, could store a page that attacks the people opening it).
+	 */
+	const ACTIVE_CONTENT_TYPES = [
+		'text/html', 'application/xhtml+xml', 'image/svg+xml',
+		'text/xml', 'application/xml', 'text/xsl', 'application/xslt+xml', 'text/xslt',
+		'application/mathml+xml', 'application/rdf+xml', 'application/atom+xml', 'application/rss+xml',
+	];
+
+	public function http_head(string $uri, array &$props = []): ?string
+	{
+		$out = parent::http_head($uri, $props);
+
+		// Never let a browser guess a different type than the one we declare
+		header('X-Content-Type-Options: nosniff');
+
+		$type = null;
+
+		foreach (headers_list() as $h) {
+			if (0 === stripos($h, 'Content-Type:')) {
+				$type = strtolower(trim(explode(';', substr($h, 13))[0]));
+			}
+		}
+
+		if ($type !== null && in_array($type, self::ACTIVE_CONTENT_TYPES, true)) {
+			$name = basename($uri);
+			$ascii = preg_replace('/[^\x20-\x7e]|["\\\\]/', '_', $name);
+
+			// Download instead of display, and if it is displayed anyway, as a unique origin without scripts
+			header(sprintf('Content-Disposition: attachment; filename="%s"; filename*=UTF-8\'\'%s', $ascii, rawurlencode($name)));
+			header('Content-Security-Policy: sandbox; default-src \'none\'');
+		}
+
+		return $out;
+	}
+
 	public function http_options(): void
 	{
 		parent::http_options();
