@@ -37,6 +37,11 @@ class Server
 			return true;
 		}
 
+		// Files and listings are not meant to be shown inside the frame of another site
+		header('X-Content-Type-Options: nosniff');
+		header('X-Frame-Options: SAMEORIGIN');
+		header('Referrer-Policy: same-origin');
+
 		if (WOPI_DISCOVERY_URL) {
 			$wopi = new WOPI;
 			$wopi->setServer($this->dav);

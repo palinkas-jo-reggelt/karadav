@@ -4,6 +4,10 @@ namespace KaraDAV;
 
 require_once __DIR__ . '/_inc.php';
 
+header('X-Frame-Options: DENY');
+header("Content-Security-Policy: frame-ancestors 'none'");
+header('Referrer-Policy: no-referrer');
+
 $users = new Users;
 
 // An application asks to be connected to the account:

@@ -9,6 +9,13 @@ use KD2\Smartyer;
 
 require_once __DIR__ . '/../init.php';
 
+// The pages of the interface are not meant to be shown inside the frame of another site, nor to tell
+// other sites which page they came from
+header('X-Frame-Options: SAMEORIGIN');
+header("Content-Security-Policy: frame-ancestors 'self'");
+header('X-Content-Type-Options: nosniff');
+header('Referrer-Policy: same-origin');
+
 $users = new Users;
 $logged_user = $users->current();
 
